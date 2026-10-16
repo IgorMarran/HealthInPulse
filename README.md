@@ -1,5 +1,7 @@
 # HealthInPulse v7
 
+[![CI](https://github.com/IgorMarran/HealthInPulse/actions/workflows/ci.yml/badge.svg)](https://github.com/IgorMarran/HealthInPulse/actions/workflows/ci.yml)
+
 Plataforma acadêmica de saúde digital integrada à pulseira **Care Plus**: o
 paciente acompanha sinais vitais em tempo real, recebe metas personalizadas via
 triagem com IA e troca **health-coins** por benefícios; o(a) médico(a) tem
@@ -21,84 +23,81 @@ clínica de referência.
 
 ---
 
-## Pré-requisitos
+## Como rodar
 
-- **Node.js 20 ou superior** (`node --version` → `v20.x.x`)
-- **npm 10+** (vem junto com o Node)
-- Nada mais: SQLite é em arquivo (`backend/src/prisma/dev.db`), sem Postgres ou
-  Docker
+Escolha um caminho. Os três chegam no mesmo app, com os dados de demonstração.
 
-> Em sistemas antigos basta instalar `nvm` e fazer `nvm install 20`.
+| Você quer...                       | Caminho                                         | Precisa instalar |
+|------------------------------------|-------------------------------------------------|------------------|
+| programar sem instalar nada no PC  | [A. GitHub Codespaces](#a-github-codespaces)    | nada (navegador) |
+| programar na sua máquina           | [B. Local](#b-local)                            | Node 20+ e Git   |
+| só ver o app funcionando           | [C. Docker ou demo online](#c-só-ver-o-app)     | Docker (ou nada) |
 
----
+### A. GitHub Codespaces
 
-## Setup inicial (primeira vez)
+Melhor caminho se o Prisma não instala no seu PC (rede da faculdade, antivírus,
+Windows travando arquivo).
 
-### 1. Clonar
+1. No repositório no GitHub: **Code → Codespaces → Create codespace on main**.
+2. Espere a criação. O `npm run setup` roda sozinho (uns 2 minutos na primeira vez).
+3. No terminal do Codespace: `npm run dev`
+4. Abra a aba **Ports** e clique no globo da porta **5173** ("App").
 
-```bash
-git clone https://github.com/igormarran01/heathinpulse.git
-cd heathinpulse
-```
+Conta pessoal do GitHub tem uma cota grátis de horas por mês (maior com o
+GitHub Student Developer Pack). Quando terminar: **Codespaces → Stop**.
 
-### 2. Backend
+### B. Local
 
-```bash
-cd backend
-cp .env.example .env             # edite os JWT secrets (ver abaixo)
-
-npm install
-npx prisma generate              # gera o client do Prisma
-npx prisma db push               # cria as tabelas no SQLite
-npm run db:seed                  # popula 2 pacientes + médica + metas + rewards
-```
-
-### Preencher `.env`
-
-O arquivo `.env.example` lista todas as variáveis. As **únicas obrigatórias**
-para rodar localmente são os dois JWT secrets. Gere com:
+Pré-requisitos: **Node.js 20 ou mais novo** (o LTS de https://nodejs.org serve)
+e **Git**. Não precisa de Postgres nem de Docker: o banco é SQLite, em arquivo.
 
 ```bash
-node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+git clone https://github.com/IgorMarran/HealthInPulse.git
+cd HealthInPulse
+npm run setup     # instala tudo, cria backend/.env, cria o banco e popula a demo
+npm run dev       # sobe API (:3000) + frontend (:5173) no mesmo terminal
 ```
 
-E cole em:
+Abra **http://localhost:5173**. `Ctrl+C` para os dois.
 
-```env
-JWT_ACCESS_SECRET=<a-saída-do-comando>
-JWT_REFRESH_SECRET=<outra-saída-do-comando>
-```
+O que o `npm run setup` faz:
 
-`OPENAI_API_KEY` é **opcional**. Sem ela o sistema usa o simulador local de IA
-(determinístico baseado em palavras-chave) — bom para apresentação offline.
+- confere a versão do Node;
+- cria o `backend/.env` com segredos JWT aleatórios. Se você já tinha um `.env`
+  copiado do exemplo antigo (Postgres, `sk-...`), ele conserta e avisa;
+- instala as dependências da raiz, do backend e do frontend com `npm ci`
+  (versões exatas do lockfile, iguais em todas as máquinas);
+- gera o Prisma Client, cria o banco SQLite e popula os dados da demo;
+- pode rodar de novo sem medo: não apaga seus dados. Para zerar o banco existe
+  o `npm run db:reset`.
 
-### 3. Frontend
+Rode o `npm run setup` de novo depois de um `git pull` que mexa em
+`package.json` ou no `schema.prisma`.
+
+`OPENAI_API_KEY` é opcional. Vazia, a triagem usa o simulador local
+(determinístico, por palavras-chave), bom para apresentar offline. Para usar o
+GPT-4o, cole uma chave real no `backend/.env` e reinicie o `npm run dev`.
+
+### C. Só ver o app
+
+**Docker** (não precisa de Node):
 
 ```bash
-cd ../frontend
-npm install
+docker compose up --build
 ```
 
-Não precisa de `.env` no frontend — o `vite.config.js` faz proxy de `/api`
-e `/uploads` para `http://localhost:3000`.
+Abra **http://localhost:3000**. É um container só: API, tempo real e o build do
+frontend na mesma porta. O banco fica num volume e sobrevive a restarts.
 
----
+**Demo online grátis (Render).** O `render.yaml` já descreve o serviço; o dono
+do repositório configura uma vez: em render.com, **New → Blueprint**, escolhe
+este repositório e **Apply**. Depois disso, cada push na `main` faz deploy
+sozinho. No plano grátis:
 
-## Como rodar (dia a dia)
-
-**Em dois terminais**:
-
-```bash
-# terminal 1
-cd backend
-npm run dev               # http://localhost:3000 (com nodemon)
-
-# terminal 2
-cd frontend
-npm run dev               # http://localhost:5173 (com hot reload)
-```
-
-Abra **http://localhost:5173** no navegador.
+- o serviço dorme após 15 min sem acesso, e o primeiro acesso leva ~1 min.
+  Abra o link uns minutos antes de apresentar;
+- o disco é apagado a cada deploy/restart, e o banco volta para os dados da
+  demo. Para a apresentação isso é bom: sempre começa limpo.
 
 ---
 
@@ -117,6 +116,18 @@ diretamente. Ou digite manualmente:
 
 ## Scripts disponíveis
 
+### Raiz (use estes no dia a dia)
+
+| Comando             | O que faz                                                                  |
+|---------------------|----------------------------------------------------------------------------|
+| `npm run setup`     | Prepara tudo: dependências, `.env`, banco e dados da demo                  |
+| `npm run dev`       | API + frontend juntos, com hot reload                                      |
+| `npm run db:reset`  | Apaga o banco e recria os dados da demo                                    |
+| `npm run db:studio` | Abre o Prisma Studio (GUI do banco) em :5555                               |
+| `npm run build`     | Build de produção do frontend em `frontend/dist/`                          |
+| `npm start`         | Sobe só o backend; com `frontend/dist/` presente, serve o app em :3000     |
+| `npm run smoke`     | Teste de fumaça: sobe o backend e testa login e dashboards dos 3 usuários  |
+
 ### Backend (`/backend`)
 
 | Comando            | O que faz                                                |
@@ -129,13 +140,7 @@ diretamente. Ou digite manualmente:
 | `npm run db:seed`     | Popula o banco com dados demo                         |
 | `npm run db:reset`    | Reseta migrations (use só se houver migrations)       |
 
-**Comandos úteis avulsos:**
-
-```bash
-# Resetar o banco SQLite e re-popular do zero
-npx prisma db push --force-reset --skip-generate --accept-data-loss
-npm run db:seed
-```
+Para resetar o banco e re-popular do zero, use `npm run db:reset` na raiz.
 
 ### Frontend (`/frontend`)
 
@@ -150,7 +155,17 @@ npm run db:seed
 ## Estrutura de pastas (resumo)
 
 ```
-heathinpulse/
+HealthInPulse/
+├── .devcontainer/              # ambiente do GitHub Codespaces
+├── .github/workflows/ci.yml    # CI: setup + smoke em Windows, macOS e Linux
+├── scripts/
+│   ├── setup.mjs               # npm run setup / db:reset
+│   └── smoke.mjs               # npm run smoke
+├── docker/entrypoint.sh        # prepara o banco ao subir o container
+├── Dockerfile                  # imagem única (API + frontend)
+├── docker-compose.yml          # docker compose up
+├── render.yaml                 # deploy grátis no Render
+├── package.json                # scripts de raiz
 ├── backend/
 │   ├── src/
 │   │   ├── app.js              # Express app (middlewares + rotas)
@@ -199,19 +214,35 @@ Limpe o `localStorage` no DevTools (F12 → Application → Storage → Clear si
 data) e faça login de novo. O refresh-token rotation pode ter sido invalidado
 após reset do banco.
 
-**❌ "Many tentativas. Tente novamente em 15 minutos"**
-Era o `express-rate-limit` no `/api/auth`. Em modo `NODE_ENV=development` ele
-fica desativado — verifique se está rodando `npm run dev` (que injeta o
-`.env`).
+**❌ "Muitas tentativas. Tente novamente em 15 minutos"**
+É o `express-rate-limit` no `/api/auth`, ativo só com `NODE_ENV=production`
+(Docker e deploy). O padrão é 30 requisições a cada 15 min por IP, e numa sala
+de aula todo mundo sai pelo mesmo IP. Suba o limite com a variável
+`AUTH_RATE_LIMIT` (o `render.yaml` já usa 300).
 
 **❌ Dashboard em branco após login**
 Quase sempre violação das Regras de Hooks do React. Abra o DevTools (F12 →
 Console) e procure por "Rendered fewer hooks than expected". Recarregue com
 `Ctrl+Shift+R`.
 
+**❌ Setup falha baixando o Prisma (`binaries.prisma.sh`, `ECONNRESET`, `ETIMEDOUT`, certificado)**
+Na instalação o Prisma baixa um "engine" (um programa) da internet. Rede de
+faculdade, proxy ou antivírus costumam bloquear esse download. Tente outra rede
+(o 4G do celular quase sempre resolve), libere a pasta do projeto no antivírus,
+ou use o [Codespaces](#a-github-codespaces). Não precisa trocar o banco por
+JSON: o problema é só o download.
+
+**❌ `EPERM` / `EBUSY` no Windows durante o setup**
+Algum arquivo está em uso. Pare o `npm run dev` (`Ctrl+C`), feche o VS Code
+nessa pasta e rode `npm run setup` de novo.
+
 **❌ Backend não sobe — `MODULE_NOT_FOUND`**
-Rode `npm install` no `backend/`. Se persistir, apague `node_modules` e
-`package-lock.json` e tente de novo.
+Rode `npm run setup` na raiz. Não apague o `package-lock.json`: é ele que
+garante as mesmas versões em todas as máquinas.
+
+**❌ Porta 3000 ou 5173 em uso**
+Já tem outro `npm run dev` (ou o `docker compose`) rodando. Feche o outro
+terminal ou rode `docker compose down`.
 
 **❌ Prisma diz "schema.prisma not found"**
 O `package.json` do backend aponta `prisma.schema` para
