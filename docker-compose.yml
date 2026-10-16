@@ -1,49 +1,25 @@
-version: '3.9'
+# Sobe a demo completa num container só, sem instalar Node na máquina:
+#
+#   docker compose up --build      → http://localhost:3000
+#
+# Para desenvolver (hot reload), use `npm run setup` + `npm run dev`.
 
 services:
-  # ─── Banco de dados ──────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    container_name: healthinpulse-db
+  app:
+    build: .
+    image: healthinpulse:local
+    container_name: healthinpulse
     restart: unless-stopped
-    environment:
-      POSTGRES_USER:     postgres
-      POSTGRES_PASSWORD: senha
-      POSTGRES_DB:       healthinpulse
     ports:
-      - '5432:5432'
+      # Só esta máquina. As senhas da demo são públicas: na rede da faculdade,
+      # 3000:3000 deixaria qualquer um entrar como a médica.
+      - '127.0.0.1:3000:3000'
+    environment:
+      CLIENT_URL: http://localhost:3000
+      TRUST_PROXY: ''          # local, sem proxy reverso na frente
+      # OPENAI_API_KEY: sk-... # opcional; vazio = simulador local de IA
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ─── Interface visual do banco (dev) ─────────────────────────
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: healthinpulse-pgadmin
-    restart: unless-stopped
-    environment:
-      PGADMIN_DEFAULT_EMAIL:    admin@healthinpulse.dev
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - '5050:80'
-    depends_on:
-      - postgres
-
-  # ─── Backend (opcional — rode local em dev) ───────────────────
-  # backend:
-  #   build: ./backend
-  #   container_name: healthinpulse-api
-  #   restart: unless-stopped
-  #   env_file: ./backend/.env
-  #   ports:
-  #     - '3000:3000'
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
+      - data:/data             # banco SQLite persiste entre restarts
 
 volumes:
-  postgres_data:
+  data:

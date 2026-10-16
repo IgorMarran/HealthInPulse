@@ -4,6 +4,7 @@ const helmet     = require('helmet');
 const morgan     = require('morgan');
 const rateLimit  = require('express-rate-limit');
 const path       = require('path');
+const fs         = require('fs');
 
 const authRoutes         = require('./routes/authRoutes');
 const patientRoutes      = require('./routes/patientRoutes');
@@ -21,6 +22,12 @@ const logger = require('./utils/logger');
 
 const app = express();
 
+// Atrás de proxy reverso (Render, Railway, Nginx) o IP real vem no
+// X-Forwarded-For; sem isso o rate limit trata todo mundo como um IP só.
+if (process.env.TRUST_PROXY) {
+  app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
+}
+
 // ─── segurança ───────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
@@ -33,7 +40,8 @@ app.use(cors({
 if (process.env.NODE_ENV === 'production') {
   app.use('/api/auth', rateLimit({
     windowMs: 15 * 60 * 1000, // 15 min
-    max: 30,
+    // Numa sala de aula todo mundo sai pelo mesmo IP: suba via env na demo
+    max: Number(process.env.AUTH_RATE_LIMIT) || 30,
     message: { error: 'Muitas tentativas. Tente novamente em 15 minutos.' },
   }));
 }
@@ -66,6 +74,20 @@ app.use('/api/rewards',       rewardRoutes);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date() }));
+
+// ─── frontend (build de produção) ────────────────────────────
+// Em produção o backend serve o build do Vite: um processo, uma porta, sem CORS.
+// Em dev esta pasta não existe e o Vite (5173) serve o frontend.
+const FRONTEND_DIST = process.env.FRONTEND_DIST
+  || path.join(__dirname, '..', '..', 'frontend', 'dist');
+
+if (fs.existsSync(path.join(FRONTEND_DIST, 'index.html'))) {
+  app.use(express.static(FRONTEND_DIST, { index: false }));
+  // Rotas do React Router (/patient/..., /doctor/...) caem no index.html
+  app.get(/^\/(?!(api|uploads|socket\.io)(\/|$)).*/, (_req, res) => {
+    res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
+  });
+}
 
 // Rota não encontrada
 app.use((_req, res) => res.status(404).json({ error: 'Rota não encontrada' }));

@@ -1,0 +1,24 @@
+# Deploy grátis no Render (Blueprint): https://render.com/docs/blueprint-spec
+# No painel: New → Blueprint → escolha este repositório.
+#
+# Plano free: dorme após 15 min sem acesso (o primeiro acesso leva ~1 min) e o
+# disco é apagado a cada deploy/restart. O entrypoint recria o banco com os
+# dados da demo, então cada restart volta ao estado inicial.
+
+services:
+  - type: web
+    name: healthinpulse
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      # Sala de aula sai por um IP só; 30 logins/15 min trava a apresentação
+      - key: AUTH_RATE_LIMIT
+        value: '300'
+      - key: OPENAI_API_KEY
+        sync: false # opcional; vazio = simulador local de IA
