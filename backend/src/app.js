@@ -57,7 +57,13 @@ app.use(morgan(
 ));
 
 // ─── arquivos estáticos (uploads) ────────────────────────────
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Uploads saem do mesmo origin do app: sandbox impede que um arquivo
+// enviado rode script com acesso aos tokens do localStorage.
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  setHeaders: (res) => {
+    res.set('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox");
+  },
+}));
 
 // ─── rotas ───────────────────────────────────────────────────
 app.use('/api/auth',          authRoutes);
