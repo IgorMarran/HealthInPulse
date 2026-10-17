@@ -19,13 +19,16 @@ Interface React do sistema de saúde digital HealthInPulse.
 
 ## Setup
 
+Na **raiz** do repositório:
+
 ```bash
-cd frontend
-npm install
-npm run dev
+npm run setup   # uma vez
+npm run dev     # backend + frontend juntos
 ```
 
-O frontend roda em `http://localhost:5173` e faz proxy automático para o backend em `localhost:3000`.
+O frontend roda em `http://localhost:5173` e faz proxy de `/api`, `/uploads` e
+`/socket.io` (WebSocket) para o backend em `localhost:3000`. Detalhes no
+[README da raiz](../README.md#como-rodar).
 
 ---
 

@@ -8,40 +8,37 @@ API REST + WebSocket para o sistema de saúde digital HealthInPulse.
 
 - **Runtime**: Node.js 20+
 - **Framework**: Express 4
-- **Banco**: PostgreSQL 16 via Prisma ORM
+- **Banco**: SQLite via Prisma ORM (arquivo em `src/prisma/dev.db`)
 - **Realtime**: Socket.io
-- **IA**: OpenAI GPT-4o
+- **IA**: OpenAI GPT-4o (opcional; sem chave usa o simulador local)
 - **Auth**: JWT (access + refresh token com rotação)
 
 ---
 
-## Setup rápido
+## Setup
 
-### 1. Banco de dados (Docker)
+Na **raiz** do repositório:
+
 ```bash
-docker-compose up -d postgres
+npm run setup   # dependências, .env, banco e dados da demo
+npm run dev     # backend (:3000) + frontend (:5173)
 ```
 
-### 2. Backend
-```bash
-cd backend
-cp .env.example .env
-# Edite o .env com seus valores
+Detalhes e alternativas (Codespaces, Docker) no [README da raiz](../README.md#como-rodar).
 
-npm install
+### Variáveis de ambiente
 
-# Gera o Prisma Client
-npm run db:generate
-
-# Cria as tabelas
-npm run db:migrate
-
-# Popula dados de desenvolvimento
-npm run db:seed
-
-# Inicia em modo dev
-npm run dev
-```
+| Variável             | Padrão                  | Para quê                                                   |
+|----------------------|-------------------------|------------------------------------------------------------|
+| `DATABASE_URL`       | `file:./dev.db`         | SQLite, relativo a `src/prisma/schema.prisma`              |
+| `JWT_ACCESS_SECRET`  | gerado pelo setup       | assina o access token                                      |
+| `JWT_REFRESH_SECRET` | gerado pelo setup       | assina o refresh token                                     |
+| `OPENAI_API_KEY`     | vazio                   | vazio = simulador local de IA                              |
+| `CLIENT_URL`         | `http://localhost:5173` | origem liberada no CORS e no Socket.io                     |
+| `TRUST_PROXY`        | vazio (`1` no Render)   | atrás de proxy reverso, usa o IP real no rate limit        |
+| `AUTH_RATE_LIMIT`    | `30`                    | requisições por 15 min em `/api/auth` (só em produção)     |
+| `FRONTEND_DIST`      | `../frontend/dist`      | build do Vite servido pelo backend, se existir             |
+| `DEMO_PASSWORD`      | vazio                   | senha da turma na frente de tudo (demo pública); vazio = sem portão |
 
 ---
 
