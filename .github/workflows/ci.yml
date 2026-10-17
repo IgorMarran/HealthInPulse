@@ -61,7 +61,7 @@ jobs:
         run: docker build -t healthinpulse:ci .
 
       - name: Sobe o container
-        run: docker run -d --name app -p 3000:3000 -e TRUST_PROXY= healthinpulse:ci
+        run: docker run -d --name app -p 3000:3000 healthinpulse:ci
 
       - uses: actions/setup-node@v5
         with:

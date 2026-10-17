@@ -13,6 +13,9 @@ services:
     healthCheckPath: /health
     autoDeploy: true
     envVars:
+      # O Render fica atrás de proxy: o IP real do cliente vem no X-Forwarded-For
+      - key: TRUST_PROXY
+        value: '1'
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET

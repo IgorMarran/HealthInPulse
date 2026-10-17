@@ -16,7 +16,6 @@ services:
       - '127.0.0.1:3000:3000'
     environment:
       CLIENT_URL: http://localhost:3000
-      TRUST_PROXY: ''          # local, sem proxy reverso na frente
       # OPENAI_API_KEY: sk-... # opcional; vazio = simulador local de IA
     volumes:
       - data:/data             # banco SQLite persiste entre restarts

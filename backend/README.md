@@ -35,7 +35,7 @@ Detalhes e alternativas (Codespaces, Docker) no [README da raiz](../README.md#co
 | `JWT_REFRESH_SECRET` | gerado pelo setup       | assina o refresh token                                     |
 | `OPENAI_API_KEY`     | vazio                   | vazio = simulador local de IA                              |
 | `CLIENT_URL`         | `http://localhost:5173` | origem liberada no CORS e no Socket.io                     |
-| `TRUST_PROXY`        | vazio (`1` no Docker)   | atrás de proxy reverso, usa o IP real no rate limit        |
+| `TRUST_PROXY`        | vazio (`1` no Render)   | atrás de proxy reverso, usa o IP real no rate limit        |
 | `AUTH_RATE_LIMIT`    | `30`                    | requisições por 15 min em `/api/auth` (só em produção)     |
 | `FRONTEND_DIST`      | `../frontend/dist`      | build do Vite servido pelo backend, se existir             |
 

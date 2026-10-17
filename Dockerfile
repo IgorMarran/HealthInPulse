@@ -28,8 +28,7 @@ RUN cd backend && npx --no-install prisma generate
 FROM base
 ENV NODE_ENV=production \
     PORT=3000 \
-    DATABASE_URL=file:/data/healthinpulse.db \
-    TRUST_PROXY=1
+    DATABASE_URL=file:/data/healthinpulse.db
 
 COPY --from=backend  --chown=node:node /app/backend        backend
 COPY --from=frontend --chown=node:node /app/frontend/dist  frontend/dist
