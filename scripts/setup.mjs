@@ -174,6 +174,14 @@ function checkNode() {
   ok(`Node ${process.versions.node}`);
 }
 
+// O OneDrive sincroniza o node_modules enquanto o npm escreve: EPERM/EBUSY
+// aleatórios e um setup lento. A pasta Documentos do Windows costuma estar nele.
+function checkProjectPath() {
+  if (IS_WIN && /onedrive/i.test(ROOT)) {
+    warn('o projeto está dentro do OneDrive; se der EPERM/EBUSY, clone fora dele (ex.: C:\\dev\\HealthInPulse)');
+  }
+}
+
 function checkOnly() {
   const missing = [];
   if (!existsSync(ENV_FILE)) missing.push('backend/.env');
@@ -197,6 +205,7 @@ async function main() {
 
   step('Conferindo o ambiente');
   checkNode();
+  checkProjectPath();
 
   step('Configurando backend/.env');
   const env = ensureEnv();

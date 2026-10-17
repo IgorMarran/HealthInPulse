@@ -60,6 +60,24 @@ npm run dev       # sobe API (:3000) + frontend (:5173) no mesmo terminal
 
 Abra **http://localhost:5173**. `Ctrl+C` para os dois.
 
+**No Windows**, duas coisas evitam quase todos os problemas:
+
+- rode os comandos no **Prompt de Comando (cmd)** ou no **Git Bash**. O
+  PowerShell (padrão do terminal do VS Code) pode bloquear o `npm`; veja o
+  [Troubleshooting](#troubleshooting). No VS Code: seta ao lado do **+** do
+  terminal → **Command Prompt**;
+- clone **fora do OneDrive**, por exemplo em `C:\dev`. A pasta Documentos
+  costuma ser sincronizada pelo OneDrive, que trava arquivos durante o setup:
+
+```bat
+mkdir C:\dev
+cd C:\dev
+git clone https://github.com/IgorMarran/HealthInPulse.git
+cd HealthInPulse
+npm run setup
+npm run dev
+```
+
 O que o `npm run setup` faz:
 
 - confere a versão do Node;
@@ -243,9 +261,17 @@ faculdade, proxy ou antivírus costumam bloquear esse download. Tente outra rede
 ou use o [Codespaces](#a-github-codespaces). Não precisa trocar o banco por
 JSON: o problema é só o download.
 
+**❌ `npm.ps1 não pode ser carregado porque a execução de scripts foi desabilitada` (Windows)**
+(Em inglês: `npm.ps1 cannot be loaded because running scripts is disabled`.)
+É o PowerShell bloqueando o atalho do npm. Use o **Prompt de Comando (cmd)**
+ou o **Git Bash**. No VS Code: seta ao lado do **+** do terminal →
+**Command Prompt**. Se quiser continuar no PowerShell, troque `npm` por
+`npm.cmd` (ex.: `npm.cmd run setup`).
+
 **❌ `EPERM` / `EBUSY` no Windows durante o setup**
 Algum arquivo está em uso. Pare o `npm run dev` (`Ctrl+C`), feche o VS Code
-nessa pasta e rode `npm run setup` de novo.
+nessa pasta e rode `npm run setup` de novo. Se o projeto estiver dentro do
+OneDrive (o setup avisa), clone de novo fora dele, ex.: `C:\dev`.
 
 **❌ Backend não sobe — `MODULE_NOT_FOUND`**
 Rode `npm run setup` na raiz. Não apague o `package-lock.json`: é ele que
