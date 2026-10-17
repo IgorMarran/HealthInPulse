@@ -60,15 +60,15 @@ jobs:
       - name: Build
         run: docker build -t healthinpulse:ci .
 
-      - name: Sobe o container
-        run: docker run -d --name app -p 3000:3000 healthinpulse:ci
+      - name: Sobe o container (com o portão de senha, como no Render)
+        run: docker run -d --name app -p 3000:3000 -e DEMO_PASSWORD=senha-do-ci healthinpulse:ci
 
       - uses: actions/setup-node@v5
         with:
           node-version: 20
 
       - name: Smoke test no container
-        run: node scripts/smoke.mjs --url=http://127.0.0.1:3000
+        run: node scripts/smoke.mjs --url=http://127.0.0.1:3000 --demo-password=senha-do-ci
 
       - name: Logs do container
         if: always()

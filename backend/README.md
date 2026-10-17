@@ -38,6 +38,7 @@ Detalhes e alternativas (Codespaces, Docker) no [README da raiz](../README.md#co
 | `TRUST_PROXY`        | vazio (`1` no Render)   | atrás de proxy reverso, usa o IP real no rate limit        |
 | `AUTH_RATE_LIMIT`    | `30`                    | requisições por 15 min em `/api/auth` (só em produção)     |
 | `FRONTEND_DIST`      | `../frontend/dist`      | build do Vite servido pelo backend, se existir             |
+| `DEMO_PASSWORD`      | vazio                   | senha da turma na frente de tudo (demo pública); vazio = sem portão |
 
 ---
 

@@ -91,13 +91,24 @@ frontend na mesma porta. O banco fica num volume e sobrevive a restarts.
 
 **Demo online grátis (Render).** O `render.yaml` já descreve o serviço; o dono
 do repositório configura uma vez: em render.com, **New → Blueprint**, escolhe
-este repositório e **Apply**. Depois disso, cada push na `main` faz deploy
-sozinho. No plano grátis:
+este repositório e **Apply**. O Render pede dois valores:
+
+- `DEMO_PASSWORD`: **a senha da turma**. Quem abrir o link digita essa senha
+  uma vez (vale por 30 dias naquele navegador) e só então chega na tela de
+  login. Sem ela, qualquer pessoa com o link entraria como a médica, porque as
+  senhas dos usuários de demo são públicas;
+- `OPENAI_API_KEY`: deixe **vazio**. A demo usa o simulador local; com chave
+  real, cada triagem feita no link gasta a sua conta da OpenAI.
+
+Depois disso, cada push na `main` faz deploy sozinho. Para trocar a senha da
+turma: painel do Render → serviço → **Environment**. No plano grátis:
 
 - o serviço dorme após 15 min sem acesso, e o primeiro acesso leva ~1 min.
   Abra o link uns minutos antes de apresentar;
 - o disco é apagado a cada deploy/restart, e o banco volta para os dados da
   demo. Para a apresentação isso é bom: sempre começa limpo.
+
+Para conferir o deploy: `npm run smoke -- --url=https://SEU-APP.onrender.com --demo-password=SENHA`.
 
 ---
 

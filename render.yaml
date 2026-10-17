@@ -20,8 +20,14 @@ services:
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
+      # Senha da turma: o Render pede no Apply do Blueprint. Sem ela a demo fica
+      # aberta para qualquer um com o link (as senhas dos usuários são públicas).
+      - key: DEMO_PASSWORD
+        sync: false
       # Sala de aula sai por um IP só; 30 logins/15 min trava a apresentação
       - key: AUTH_RATE_LIMIT
         value: '300'
+      # Opcional. Recomendado deixar vazio na demo pública (simulador local):
+      # com chave real, cada triagem de quem entrar gasta a sua conta da OpenAI.
       - key: OPENAI_API_KEY
-        sync: false # opcional; vazio = simulador local de IA
+        sync: false

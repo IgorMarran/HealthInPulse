@@ -4,6 +4,7 @@
 //
 //   npm run smoke                 sobe o backend local (precisa do `npm run setup` antes)
 //   npm run smoke -- --url=URL    só testa um servidor já rodando (ex.: o deploy)
+//   --demo-password=SENHA         testa também o portão da demo (DEMO_PASSWORD)
 
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -17,6 +18,8 @@ const PORT    = process.env.SMOKE_PORT || '3999';
 const urlArg  = process.argv.find((a) => a.startsWith('--url='));
 const BASE    = urlArg ? urlArg.slice('--url='.length).replace(/\/$/, '') : `http://127.0.0.1:${PORT}`;
 const TIMEOUT_MS = urlArg ? 120_000 : 30_000; // deploy grátis pode estar "dormindo"
+const DEMO_PASSWORD = process.argv.find((a) => a.startsWith('--demo-password='))
+  ?.slice('--demo-password='.length);
 
 const DEMO_USERS = [
   { email: 'joao@healthinpulse.dev',   password: 'Joao@123',   dashboard: '/api/patient/dashboard' },
@@ -26,6 +29,7 @@ const DEMO_USERS = [
 
 let failures = 0;
 let finished = false;
+let gateCookie = null; // cookie do portão da demo, depois da senha certa
 
 // Sem isto, uma falha silenciosa vira CI verde: o fetch do Node 20 pode
 // ficar pendurado sem segurar o processo (ex.: porta do Docker aceitando
@@ -42,7 +46,8 @@ async function http(url, opts = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(new Error(`sem resposta em 10s: ${url}`)), 10_000);
   try {
-    return await fetch(url, { ...opts, signal: ctrl.signal });
+    const headers = { ...(gateCookie && { cookie: gateCookie }), ...opts.headers };
+    return await fetch(url, { ...opts, headers, signal: ctrl.signal });
   } finally {
     clearTimeout(timer);
   }
@@ -75,13 +80,53 @@ async function waitForHealth() {
 function startBackend() {
   const child = spawn(process.execPath, ['src/server.js'], {
     cwd: BACKEND,
-    env: { ...process.env, PORT, NODE_ENV: 'test', LOG_LEVEL: 'warn' },
+    env: {
+      ...process.env, PORT, NODE_ENV: 'test', LOG_LEVEL: 'warn',
+      ...(DEMO_PASSWORD && { DEMO_PASSWORD }),
+    },
     stdio: ['ignore', 'inherit', 'inherit'],
   });
   child.on('exit', (code) => {
     if (code !== null && code !== 0) console.error(`backend saiu com código ${code}`);
   });
   return child;
+}
+
+async function checkDemoGate() {
+  const form = (password) => ({
+    method: 'POST',
+    redirect: 'manual',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ password, next: '/doctor/dashboard' }),
+  });
+
+  await check('portão: sem senha, navegador vai para /demo-access e API dá 401', async () => {
+    const page = await http(`${BASE}/doctor/dashboard`, { redirect: 'manual', headers: { accept: 'text/html' } });
+    assert(page.status === 302, `página respondeu ${page.status}`);
+    assert(page.headers.get('location')?.startsWith('/demo-access'), `redirect para ${page.headers.get('location')}`);
+
+    const api = await http(`${BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ email: DEMO_USERS[0].email, password: DEMO_USERS[0].password }),
+    });
+    assert(api.status === 401, `login sem passar pelo portão respondeu ${api.status}`);
+  });
+
+  await check('portão: senha errada é recusada', async () => {
+    const res = await http(`${BASE}/demo-access`, form('senha-errada'));
+    assert(res.status === 401, `respondeu ${res.status}`);
+    assert(!res.headers.get('set-cookie'), 'emitiu cookie com senha errada');
+  });
+
+  await check('portão: senha certa libera e volta para a página pedida', async () => {
+    const res = await http(`${BASE}/demo-access`, form(DEMO_PASSWORD));
+    assert(res.status === 303, `respondeu ${res.status}`);
+    assert(res.headers.get('location') === '/doctor/dashboard', `redirect para ${res.headers.get('location')}`);
+    const cookie = res.headers.get('set-cookie');
+    assert(cookie?.includes('HttpOnly'), 'cookie sem HttpOnly');
+    gateCookie = cookie.split(';')[0];
+  });
 }
 
 async function main() {
@@ -97,6 +142,8 @@ async function main() {
   console.log(`Smoke test em ${BASE}`);
   try {
     await check('GET /health responde', waitForHealth);
+
+    if (DEMO_PASSWORD) await checkDemoGate();
 
     for (const user of DEMO_USERS) {
       await check(`login + dashboard (${user.email})`, async () => {

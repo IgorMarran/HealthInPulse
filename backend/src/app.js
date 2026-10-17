@@ -18,6 +18,7 @@ const { router: wearableRouter }    = require('./routes/wearableRoutes');
 const goalRoutes    = require('./routes/goalRoutes');
 const rewardRoutes  = require('./routes/rewardRoutes');
 const errorMiddleware = require('./middlewares/errorMiddleware');
+const demoGate        = require('./middlewares/demoGateMiddleware');
 const logger = require('./utils/logger');
 
 const app = express();
@@ -55,6 +56,9 @@ app.use(morgan(
   process.env.NODE_ENV === 'development' ? 'dev' : 'combined',
   { stream: { write: (msg) => logger.http(msg.trim()) } },
 ));
+
+// ─── portão da demo pública (só com DEMO_PASSWORD) ───────────
+app.use(demoGate());
 
 // ─── arquivos estáticos (uploads) ────────────────────────────
 // Uploads saem do mesmo origin do app: sandbox impede que um arquivo
