@@ -25,6 +25,29 @@ const DEMO_USERS = [
 ];
 
 let failures = 0;
+let finished = false;
+
+// Sem isto, uma falha silenciosa vira CI verde: o fetch do Node 20 pode
+// ficar pendurado sem segurar o processo (ex.: porta do Docker aceitando
+// conexão antes do app subir) e o Node sai com código 0 no meio do teste.
+process.on('beforeExit', () => {
+  if (!finished) {
+    console.error('\nSmoke terminou sem concluir as verificações.');
+    process.exitCode = 1;
+  }
+});
+
+// Timer próprio (ref'd) mantém o processo vivo e aborta requisição travada.
+async function http(url, opts = {}) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(new Error(`sem resposta em 10s: ${url}`)), 10_000);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const check = async (name, fn) => {
   try {
     await fn();
@@ -41,7 +64,7 @@ async function waitForHealth() {
   const deadline = Date.now() + TIMEOUT_MS;
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${BASE}/health`);
+      const res = await http(`${BASE}/health`);
       if (res.ok) return;
     } catch { /* ainda subindo */ }
     await new Promise((r) => setTimeout(r, 500));
@@ -77,7 +100,7 @@ async function main() {
 
     for (const user of DEMO_USERS) {
       await check(`login + dashboard (${user.email})`, async () => {
-        const login = await fetch(`${BASE}/api/auth/login`, {
+        const login = await http(`${BASE}/api/auth/login`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ email: user.email, password: user.password }),
@@ -87,7 +110,7 @@ async function main() {
         const { accessToken } = JSON.parse(body);
         assert(accessToken, 'login não devolveu accessToken');
 
-        const dash = await fetch(`${BASE}${user.dashboard}`, {
+        const dash = await http(`${BASE}${user.dashboard}`, {
           headers: { authorization: `Bearer ${accessToken}` },
         });
         assert(dash.ok, `${user.dashboard} respondeu ${dash.status}`);
@@ -95,12 +118,12 @@ async function main() {
     }
 
     await check('rota protegida recusa sem token', async () => {
-      const res = await fetch(`${BASE}/api/patient/dashboard`);
+      const res = await http(`${BASE}/api/patient/dashboard`);
       assert(res.status === 401, `esperava 401, veio ${res.status}`);
     });
 
     await check('socket.io aceita handshake', async () => {
-      const res  = await fetch(`${BASE}/socket.io/?EIO=4&transport=polling`);
+      const res  = await http(`${BASE}/socket.io/?EIO=4&transport=polling`);
       const body = await res.text();
       assert(res.ok && body.startsWith('0{'), `resposta inesperada: ${res.status} ${body.slice(0, 60)}`);
     });
@@ -109,7 +132,7 @@ async function main() {
     if (servesFrontend) {
       await check('frontend servido (/ e rota do React Router)', async () => {
         for (const path of ['/', '/doctor/dashboard']) {
-          const res = await fetch(`${BASE}${path}`);
+          const res = await http(`${BASE}${path}`);
           const html = await res.text();
           assert(res.ok && html.includes('id="root"'), `${path} não devolveu o index.html (${res.status})`);
         }
@@ -117,7 +140,7 @@ async function main() {
 
       await check('rota de API inexistente dá 404 JSON, não o index.html', async () => {
         for (const path of ['/api', '/api/nao-existe']) {
-          const res = await fetch(`${BASE}${path}`);
+          const res = await http(`${BASE}${path}`);
           assert(res.status === 404, `${path} respondeu ${res.status}`);
           assert(res.headers.get('content-type')?.includes('json'), `${path} não devolveu JSON`);
         }
@@ -131,6 +154,7 @@ async function main() {
     console.error(`\n${failures} verificação(ões) falharam.`);
     process.exit(1);
   }
+  finished = true;
   console.log('\nTudo certo.');
 }
 
