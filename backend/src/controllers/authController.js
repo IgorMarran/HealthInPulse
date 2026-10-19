@@ -1,12 +1,38 @@
 const authService = require('../services/authService');
 const prisma      = require('../config/database');
 
+// Campos que o cadastro aceita no perfil de cada papel (os mesmos que a
+// RegisterPage manda). O resto do corpo (healthCoins, id, userId...) é
+// ignorado: sem isso, quem se cadastra escolhia o próprio saldo de coins.
+const PROFILE_FIELDS = {
+  PATIENT: ['fullName', 'cpf', 'dateOfBirth', 'gender', 'phone'],
+  DOCTOR:  ['fullName', 'crm', 'specialty', 'phone'],
+};
+
+const pickProfile = (role, body = {}) => {
+  const profile = Object.fromEntries(
+    (PROFILE_FIELDS[role] ?? [])
+      .filter((field) => typeof body[field] === 'string')
+      .map((field) => [field, body[field]]),
+  );
+  // O <input type="date"> manda "AAAA-MM-DD"; o Prisma só aceita data completa
+  if (profile.dateOfBirth !== undefined) {
+    const dob = new Date(profile.dateOfBirth);
+    if (Number.isNaN(dob.getTime())) {
+      throw Object.assign(new Error('Data de nascimento inválida'), { status: 422 });
+    }
+    profile.dateOfBirth = dob;
+  }
+  return profile;
+};
+
 /**
  * POST /auth/register
  */
 const register = async (req, res, next) => {
   try {
-    const { email, password, role, ...profileData } = req.body;
+    const { email, password, role } = req.body;
+    const profileData = pickProfile(role, req.body);
     const result = await authService.register({ email, password, role, profileData });
     res.status(201).json(result);
   } catch (err) {
@@ -91,4 +117,4 @@ const me = async (req, res) => {
   res.json({ user: { id, email, role, fullName, healthCoins } });
 };
 
-module.exports = { register, login, refresh, logout, changePassword, me };
+module.exports = { register, login, refresh, logout, changePassword, me, pickProfile, PROFILE_FIELDS };
