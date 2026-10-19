@@ -1,4 +1,4 @@
-# HealthInPulse v7
+# HealthInPulse v8
 
 [![CI](https://github.com/IgorMarran/HealthInPulse/actions/workflows/ci.yml/badge.svg)](https://github.com/IgorMarran/HealthInPulse/actions/workflows/ci.yml)
 
@@ -7,6 +7,15 @@ paciente acompanha sinais vitais em tempo real, recebe metas personalizadas via
 triagem com IA e troca **health-coins** por benefícios; o(a) médico(a) tem
 painel consolidado, relatórios automáticos, linha do tempo clínica e base
 clínica de referência.
+
+A v8 acrescenta a **triagem de risco de câncer** (colorretal, pulmão, mama,
+próstata e colo do útero), com IA parametrizada por banco de dados: os números
+do motor vivem em tabelas, cada um com fonte, e a médica os edita na tela
+**Base da IA**. É triagem de risco, **não diagnóstico**: o resultado traz a
+categoria (ROTINA, ATENÇÃO ou INVESTIGAR), o porquê fator a fator e o exame de
+rastreamento indicado pelas diretrizes brasileiras. Foi montada para o stand da
+feira da faculdade (24/10/2026), onde o visitante faz o **teste rápido em
+`/teste`**, sem login e sem gravar nada. Veja [Feira (stand)](#feira-stand).
 
 > Aplicação **demo/acadêmica**. Não usar com dados reais de pacientes.
 
@@ -19,6 +28,7 @@ clínica de referência.
 | Backend      | Node 20 · Express 4 · Prisma 5 · SQLite · Socket.io · JWT  |
 | Frontend     | React 18 · Vite 5 · Tailwind 3 · React Router 6 · Recharts |
 | IA           | OpenAI GPT-4o (opcional) · fallback local (`aiSimulator`)  |
+| Motor clínico| Bayes explicável · base de conhecimento no SQLite (13 condições) |
 | Auth         | JWT access + refresh com rotação                           |
 
 ---
@@ -92,9 +102,15 @@ O que o `npm run setup` faz:
 Rode o `npm run setup` de novo depois de um `git pull` que mexa em
 `package.json` ou no `schema.prisma`.
 
-`OPENAI_API_KEY` é opcional. Vazia, a triagem usa o simulador local
-(determinístico, por palavras-chave), bom para apresentar offline. Para usar o
-GPT-4o, cole uma chave real no `backend/.env` e reinicie o `npm run dev`.
+`OPENAI_API_KEY` é opcional. Vazia, os relatórios e a análise de exames usam o
+simulador local (determinístico, por palavras-chave), bom para apresentar
+offline. Para usar o GPT-4o, cole uma chave real no `backend/.env` e reinicie o
+`npm run dev`. A triagem de risco (crônicas e câncer) **não usa IA externa**: é
+o motor bayesiano local, com os parâmetros do banco.
+
+O setup também grava `KB_EDIT=true` no `backend/.env`: na sua máquina a médica
+pode editar a Base da IA. Qualquer outro valor (ou a variável ausente) deixa a
+base só para leitura; veja [Base da IA](#base-da-ia-e-edição).
 
 ### C. Só ver o app
 
@@ -105,7 +121,8 @@ docker compose up --build
 ```
 
 Abra **http://localhost:3000**. É um container só: API, tempo real e o build do
-frontend na mesma porta. O banco fica num volume e sobrevive a restarts.
+frontend na mesma porta. O banco fica num volume e sobrevive a restarts. No
+container a Base da IA é só leitura (sem `KB_EDIT=true`).
 
 **Demo online grátis (Render).** O `render.yaml` já descreve o serviço; o dono
 do repositório configura uma vez: em render.com, **New → Blueprint**, escolhe
@@ -114,15 +131,24 @@ este repositório e **Apply**. O Render pede dois valores:
 - `DEMO_PASSWORD`: **a senha da turma**. Quem abrir o link digita essa senha
   uma vez (vale por 30 dias naquele navegador) e só então chega na tela de
   login. Sem ela, qualquer pessoa com o link entraria como a médica, porque as
-  senhas dos usuários de demo são públicas;
+  senhas dos usuários de demo são públicas. **No dia da feira, deixe vazio**:
+  o visitante chega pelo QR direto no `/teste`, sem digitar senha (o teste é
+  público e não grava nada; o login continua protegido pelas credenciais);
 - `OPENAI_API_KEY`: deixe **vazio**. A demo usa o simulador local; com chave
-  real, cada triagem feita no link gasta a sua conta da OpenAI.
+  real, cada relatório gerado no link gasta a sua conta da OpenAI.
+
+O `render.yaml` fixa `KB_EDIT=false`: no Render a Base da IA é **só leitura**.
+Não troque para `true`: o cadastro de médica é aberto e as senhas da demo são
+públicas, então qualquer visitante poderia alterar a IA. A edição da demo
+acontece no notebook do stand (`npm run stand`).
 
 Depois disso, cada push na `main` faz deploy sozinho. Para trocar a senha da
 turma: painel do Render → serviço → **Environment**. No plano grátis:
 
 - o serviço dorme após 15 min sem acesso, e o primeiro acesso leva ~1 min.
-  Abra o link uns minutos antes de apresentar;
+  **Keep-warm:** crie um monitor grátis no UptimeRobot ou no cron-job.org
+  chamando `https://SEU-APP.onrender.com/health` a cada 10 min (de sexta à tarde
+  até o fim da feira) e abra o `/teste` uma vez antes de montar o stand;
 - o disco é apagado a cada deploy/restart, e o banco volta para os dados da
   demo. Para a apresentação isso é bom: sempre começa limpo.
 
@@ -132,15 +158,90 @@ Para conferir o deploy: `npm run smoke -- --url=https://SEU-APP.onrender.com --d
 
 ## Credenciais demo
 
-A tela de login tem **3 cards "Demo · clique para entrar"** que logam
-diretamente. Ou digite manualmente:
+A tela de login tem **4 cards "Demo · clique para entrar"** (Roberto, João,
+Marina e a Dra. Ana) que logam diretamente, e um link para o teste rápido.
+Ou digite manualmente:
 
 | Perfil                        | E-mail                          | Senha         | Tipo                                       |
 |------------------------------|---------------------------------|---------------|--------------------------------------------|
-| 🩺 **João Carlos Mendes**     | `joao@healthinpulse.dev`        | `Joao@123`    | Paciente · caso grave (HAS + DM2)          |
-| ✨ **Marina Azevedo Lima**    | `marina@healthinpulse.dev`      | `Marina@123`  | Paciente · preventivo (pré-diabetes; mama em atenção pela história familiar) |
-| 🧓 **Roberto Alves Pereira**  | `roberto@healthinpulse.dev`     | `Roberto@123` | Paciente · colorretal a investigar (FIT+, anemia, perda de peso na balança) |
+| 🧓 **Roberto Alves Pereira**  | `roberto@healthinpulse.dev`     | `Roberto@123` | Paciente · 63 anos, colorretal a **investigar** (FIT+, anemia, perda de peso na balança) |
+| ✨ **Marina Azevedo Lima**    | `marina@healthinpulse.dev`      | `Marina@123`  | Paciente · 34 anos, preventivo (pré-diabetes; mama em **atenção** pela história familiar) |
+| 🩺 **João Carlos Mendes**     | `joao@healthinpulse.dev`        | `Joao@123`    | Paciente · 58 anos, caso grave crônico (HAS + DM2); câncer em rotina |
 | 🧑‍⚕️ **Dra. Ana Beatriz Souza** | `doctor@healthinpulse.dev`      | `Doctor@123`  | Médica · vinculada aos 3 pacientes acima   |
+
+O seed faz as triagens dos três pelo motor de verdade e **falha alto** se a
+história mudar (por exemplo, uma revisão de número da base que tire o Roberto
+de INVESTIGAR). Um banco mexido volta à história da feira com `npm run db:reset`.
+
+---
+
+## Feira (stand)
+
+O que a equipe usa no sábado 24/10/2026. O roteiro completo, o pitch, o FAQ da
+banca, o checklist, os slides e o banner estão em [`Docs/feira/`](./Docs/feira/).
+Os números clínicos e suas fontes estão em
+[`Docs/base-clinica-oncologia.md`](./Docs/base-clinica-oncologia.md).
+
+**Notebook do stand (Windows, offline).** Um comando faz tudo:
+
+```bash
+npm run stand
+```
+
+Gera o Prisma Client, **zera e popula o banco** da demo, faz o build do
+frontend e sobe o servidor de produção na porta 3000 com a Base da IA editável
+e sem portão de senha. Imprime o endereço local, o IP da rede (para o celular
+na mesma rede/hotspot abrir `/teste`), o link do Render e os logins. Precisa
+só do que o `npm run setup` já instalou (rode o setup uma vez, com internet).
+
+| Opção                                | O que muda                                                           |
+|--------------------------------------|----------------------------------------------------------------------|
+| `npm run stand -- --keep-db`         | não zera o banco: mantém as edições feitas na Base da IA             |
+| `npm run stand -- --skip-build`      | reaproveita o `frontend/dist` que já existe                          |
+| `npm run stand -- --port=3001`       | outra porta (ou a variável `STAND_PORT`; padrão 3000)                |
+| `npm run stand -- --check`           | sobe, confere `/health`, `/teste`, o login da médica e a Base da IA editável, e encerra (usado no CI; porta padrão 3997) |
+
+`STAND_PUBLIC_URL` troca o link do Render que o banner imprime. Para o stand
+valem sempre `KB_EDIT=true`, `AUTH_RATE_LIMIT=1000` (todo mundo sai pelo IP do
+notebook), `OPENAI_API_KEY` vazia e **sem `DEMO_PASSWORD`**, mesmo que exista
+no ambiente ou no `backend/.env`. Se o celular não abrir o endereço da rede,
+libere o Node.js no firewall do Windows para redes **privadas** (o banner mostra
+o comando).
+
+**QR do teste rápido.** `npm run qr` gera `Docs/feira/qr-teste.svg` e atualiza o
+endereço escrito no banner. Quando a URL real do Render chegar:
+`npm run qr -- https://SEU-APP.onrender.com/teste --pdf` (o `--pdf` também
+regera o `banner.pdf`; precisa de Chrome, Chromium ou Edge).
+
+**Teste rápido (`/teste`).** Página pública: perfil, até 8 perguntas, resultado
+com categoria, "vezes a média da sua idade", frequência natural e rastreamento
+indicado. Nada é gravado e o corpo da requisição não vai para o log. Com
+`/teste?kiosk=1` o modo quiosque volta à capa sozinho após 120 s parado. Na capa
+há "Demonstração da equipe", com personas que preenchem tudo para a equipe
+mostrar um resultado sem digitar.
+
+**Base da IA e edição.** Menu "Base da IA" da médica (`/doctor/knowledge`).
+Os valores são editados na linha (sensibilidade, 1−especificidade, LR+/LR−,
+priors, limiares, idade mínima, ligado/desligado) e o resultado muda na hora,
+na triagem, no `/teste` e no painel de riscos. A lateral "simular em paciente"
+mostra o antes e o depois no Roberto, na Marina ou no João. Cada edição vira
+uma linha no histórico (quem, quando, de, para, motivo).
+
+- **A edição é fail-closed.** Só `KB_EDIT=true` (ou `1`, `yes`, `on`) libera
+  editar; sem a variável, ou com qualquer outro valor, a base é só leitura
+  (PATCH e restaurar devolvem 403). Local e `npm run stand` ligam; Render e
+  Docker deixam desligada.
+- **"Restaurar padrão"** volta a base aos valores de partida do código (e
+  registra o reset no histórico). É o caminho de volta depois de uma edição.
+- **O start do servidor não apaga edição da médica.** Ao subir, o backend
+  (`ensureSeeded`) só completa a base: se ela já foi editada, apenas cria o que
+  falta e **não sobrescreve** o que a médica mudou. Se ninguém a editou, ela é
+  alinhada ao código (útil depois de um `git pull` com dados novos). Para
+  voltar ao padrão, use "Restaurar padrão".
+- **`npm run db:seed` (manual) sobrescreve a base.** Ele faz upsert de todas as
+  linhas da base de conhecimento e **desfaz edições da médica** nos itens que
+  existem no código (o histórico de edições é preservado). O `db:reset` e o
+  `npm run stand` sem `--keep-db` já passam por ele.
 
 ---
 
@@ -156,7 +257,10 @@ diretamente. Ou digite manualmente:
 | `npm run db:studio` | Abre o Prisma Studio (GUI do banco) em :5555                               |
 | `npm run build`     | Build de produção do frontend em `frontend/dist/`                          |
 | `npm start`         | Sobe só o backend; com `frontend/dist/` presente, serve o app em :3000     |
-| `npm run smoke`     | Teste de fumaça: sobe o backend e testa login e dashboards dos 3 usuários  |
+| `npm test`          | Testes unitários do backend (`node --test`): motor, base, exames, rastreamento, personas |
+| `npm run smoke`     | Teste de fumaça: sobe o backend e testa login das personas, teste rápido, painel de riscos, Base da IA e o frontend (`--url=` e `--demo-password=` testam um deploy) |
+| `npm run stand`     | Sobe tudo para o stand da feira (offline); veja [Feira](#feira-stand)      |
+| `npm run qr`        | Gera o QR do `/teste` e atualiza o banner em `Docs/feira/`                 |
 
 ### Backend (`/backend`)
 
@@ -167,7 +271,8 @@ diretamente. Ou digite manualmente:
 | `npm run db:generate` | Regenera o Prisma Client                              |
 | `npm run db:migrate`  | Cria migration (em SQLite preferimos `prisma db push`)|
 | `npm run db:studio`   | Abre o Prisma Studio (GUI do banco) em :5555          |
-| `npm run db:seed`     | Popula o banco com dados demo                         |
+| `npm run db:seed`     | Popula o banco com dados demo (e **sobrescreve** a base de conhecimento) |
+| `npm test`            | Testes unitários (`node --test`)                      |
 | `npm run db:reset`    | Reseta migrations (use só se houver migrations)       |
 
 Para resetar o banco e re-popular do zero, use `npm run db:reset` na raiz.
@@ -190,7 +295,9 @@ HealthInPulse/
 ├── .github/workflows/ci.yml    # CI: setup + smoke em Windows, macOS e Linux
 ├── scripts/
 │   ├── setup.mjs               # npm run setup / db:reset
-│   └── smoke.mjs               # npm run smoke
+│   ├── smoke.mjs               # npm run smoke
+│   ├── stand.mjs               # npm run stand (notebook da feira)
+│   └── qr.mjs                  # npm run qr (QR do /teste)
 ├── docker/entrypoint.sh        # prepara o banco ao subir o container
 ├── Dockerfile                  # imagem única (API + frontend)
 ├── docker-compose.yml          # docker compose up
@@ -204,13 +311,17 @@ HealthInPulse/
 │   │   ├── middlewares/        # auth, validation, errors
 │   │   ├── controllers/        # camada HTTP
 │   │   ├── services/           # regras de negócio
+│   │   │   └── clinical/       # motor: bayes, riskEngine, questionRunner,
+│   │   │                       # labEvidence, screening, kb/ (base no banco), data/ (partida)
 │   │   ├── routes/             # rotas Express
 │   │   ├── prisma/
 │   │   │   ├── schema.prisma   # schema do banco
-│   │   │   ├── seed.js         # dados demo
+│   │   │   ├── seed.js         # dados demo + triagens das personas
+│   │   │   ├── seedKnowledge.js # grava a base de conhecimento (upsert/missing/replace)
 │   │   │   └── dev.db          # SQLite (gitignored)
 │   │   ├── utils/              # logger, jsonField (helpers SQLite)
 │   │   └── uploads/            # arquivos enviados (gitignored)
+│   ├── tests/                  # node --test (motor, base, personas, rotas)
 │   ├── .env.example
 │   └── package.json
 ├── frontend/
@@ -225,11 +336,16 @@ HealthInPulse/
 │   │   └── pages/
 │   │       ├── auth/           # Login, Register
 │   │       ├── patient/        # Dashboard, Goals, Rewards, Exams...
-│   │       └── doctor/         # Dashboard, Patients, Wearable, Reports...
+│   │       ├── doctor/         # Dashboard, Patients, Wearable, Reports, Knowledge (Base da IA)...
+│   │       └── public/         # QuickTest (/teste) e personas da equipe
 │   ├── index.html
 │   ├── vite.config.js
 │   └── tailwind.config.js
-├── Docs/                       # docx de pacientes-demo e referência clínica
+├── Docs/
+│   ├── feira/                  # pitch, FAQ, roteiro, checklist, slides, banner e QR
+│   ├── base-clinica-oncologia.md # números dos 5 cânceres, com fonte e confiança
+│   └── plano-feira/            # plano da feira
+│                               # + docx de pacientes-demo e referência clínica
 ├── ARCHITECTURE.md             # como o sistema está montado
 ├── BUSINESS_RULES.md           # regras de negócio detalhadas
 └── README.md                   # este arquivo
@@ -249,6 +365,11 @@ após reset do banco.
 (Docker e deploy). O padrão é 30 requisições a cada 15 min por IP, e numa sala
 de aula todo mundo sai pelo mesmo IP. Suba o limite com a variável
 `AUTH_RATE_LIMIT` (o `render.yaml` já usa 300).
+
+**❌ "O banco está desatualizado em relação ao schema" ao subir o servidor**
+O banco foi criado antes das tabelas da base de conhecimento (ou de outra
+mudança de schema). Rode `npm run setup` (mantém seus dados) ou
+`npm run db:reset` (recria a demo). O `npm run stand` já recria o banco.
 
 **❌ Dashboard em branco após login**
 Quase sempre violação das Regras de Hooks do React. Abra o DevTools (F12 →
@@ -304,7 +425,12 @@ enviado. O Vite faz proxy via `/api`.
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — como o sistema está organizado em
   camadas, fluxos principais e modelo de dados
 - [BUSINESS_RULES.md](./BUSINESS_RULES.md) — regras de negócio detalhadas do
-  backend (autenticação, gamificação, triagem IA, sinais vitais, etc.)
+  backend (autenticação, gamificação, triagem, motor oncológico, Base da IA,
+  sinais vitais, etc.)
+- [Docs/base-clinica-oncologia.md](./Docs/base-clinica-oncologia.md) — cada
+  número dos 5 cânceres, com fonte, população e confiança
+- [Docs/feira/](./Docs/feira/) — pitch, FAQ da banca, roteiro da demo,
+  checklist do stand, slides e banner
 
 ---
 

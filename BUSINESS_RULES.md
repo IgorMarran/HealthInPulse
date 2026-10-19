@@ -1,4 +1,4 @@
-# Regras de negócio — Backend HealthInPulse v7
+# Regras de negócio — Backend HealthInPulse v8
 
 Este documento descreve em detalhes **todas** as regras de negócio
 implementadas hoje no backend, organizadas por domínio. Sempre que possível
@@ -52,6 +52,8 @@ Middleware `authorize('PATIENT')` ou `authorize('DOCTOR')` em
 - `/api/rewards/*` → só `PATIENT`
 - `/api/triage/*`  → só `PATIENT`
 - `/api/exams`     → upload e gestão por `PATIENT`; leitura específica por `DOCTOR`
+- `/api/knowledge/*` → só `DOCTOR` (Base da IA; editar exige `KB_EDIT`, ver §16)
+- `/api/public/*`  → **sem login** (teste rápido, ver §15)
 - `/api/auth/me`   → qualquer autenticado
 
 ### 1.5 Vínculo médico↔paciente
@@ -63,15 +65,28 @@ Tabela `DoctorPatient` (relação n:m). **Regras**:
   `assertLink(doctorId, patientId)` no `doctorService.js`. Se não houver
   vínculo, retorna **HTTP 403 "Paciente não vinculado"**.
 - Em produção, o vínculo seria criado quando o paciente compartilha código de
-  convite com o médico. **No demo, os 2 pacientes são pré-vinculados via
-  seed**. O endpoint `POST /api/doctor/patients` ainda existe mas não tem mais
+  convite com o médico. **No demo, os 3 pacientes (Roberto, Marina e João) são
+  pré-vinculados via seed**. O endpoint `POST /api/doctor/patients` ainda existe mas não tem mais
   UI exposta.
 
 ### 1.6 Rate-limit
 
 Em **produção** (`NODE_ENV=production`), o endpoint `/api/auth` aceita
-no máximo **30 tentativas em 15 minutos** por IP. Em desenvolvimento, fica
-**desativado** para facilitar testes manuais (definido em `src/app.js`).
+no máximo **30 tentativas em 15 minutos** por IP (ajustável com
+`AUTH_RATE_LIMIT`: o `render.yaml` usa 300 e o `npm run stand` usa 1000, porque
+a sala toda sai por um IP só). Em desenvolvimento, fica **desativado** para
+facilitar testes manuais (definido em `src/app.js`).
+
+`/api/public` tem limite próprio, **sempre ativo**: 300 requisições por minuto
+por IP (`PUBLIC_RATE_LIMIT`) e corpo de até 16 KB.
+
+### 1.7 Portão da demo (`DEMO_PASSWORD`)
+
+Com `DEMO_PASSWORD` definida, o servidor só entrega o app a quem digitou a
+senha da turma (vale 30 dias no navegador). Sem a variável, não há portão. É
+para a demo pública, porque as senhas dos usuários de demo são públicas. **Na
+feira fica vazia** (visitante entra pelo QR direto no `/teste`) e o `npm run
+stand` nunca liga o portão, mesmo com a variável no ambiente ou no `.env`.
 
 ---
 
@@ -176,81 +191,151 @@ O score recalcula automaticamente a cada tick da pulseira (1s).
 
 ---
 
-## 4. Triagem e IA
+## 4. Triagem de risco (crônicas e câncer)
 
-### 4.1 Banco de perguntas
+A triagem do paciente (`/api/triage`) é um motor bayesiano **adaptativo** em duas
+fases. Ela é **triagem de risco, não diagnóstico**. Não usa LLM: a conta é local
+e os parâmetros vêm da base de conhecimento no banco (ver §16).
 
-Lista estática em `services/triageService.js`:
+### 4.1 Fluxo e estados
 
-| ID  | Pergunta                                        | Tipo                |
-|-----|--------------------------------------------------|---------------------|
-| q1  | Qual é a sua queixa principal hoje?              | text                |
-| q2  | Há quanto tempo está com esse sintoma?           | select (4 opções)   |
-| q3  | Intensidade da dor/desconforto (0-10)            | scale 0-10          |
-| q4  | Está com febre?                                  | boolean             |
-| q5  | Está com falta de ar?                            | boolean             |
-| q6  | Apresenta dor no peito?                          | boolean             |
-| q7  | Tem náusea ou vômito?                            | boolean             |
-| q8  | Tem alguma doença crônica relevante?             | text                |
-| q9  | Está tomando alguma medicação?                   | text                |
-| q10 | Tem alergia a algum medicamento?                 | text                |
+`POST /api/triage/start` abre a sessão; `POST /api/triage/:id/answer` responde e
+recebe a próxima etapa (`PROFILE`, `QUESTION` ou `RESULT`). O estado inteiro
+(perfil, respostas, fase) fica em `TriageAnswer.answers`:
 
-### 4.2 Fluxo de submissão
+```
+COLLECT_PROFILE → INTERVIEW (crônica) → ONCO_INTERVIEW → COMPLETED
+                  (RED_FLAG interrompe em qualquer fase)
+```
 
-`POST /api/triage` com `{ answers: [{questionId, answer}, ...] }`:
+### 4.2 Perfil (prior)
 
-1. Cria `TriageAnswer` com `status='IN_PROGRESS'`.
-2. Dispara `processTriageAnalysis` em **background** (não bloqueia resposta).
-3. Retorna **HTTP 202** com o registro inicial.
+Idade, sexo, altura, peso/IMC, fumo (maços-ano e anos sem fumar), álcool,
+história familiar de câncer (colorretal, mama, ovário, próstata, pulmão) e, para
+mulheres, Papanicolau em dia. Idade, sexo e peso vêm do cadastro quando existem.
+Esses fatores entram **só no prior** (`PriorRule`), nunca como sintoma.
 
-Em paralelo, no background:
+### 4.3 Fase crônica ("etapa 1 de 2")
 
-4. `openaiService.analyzeTriageAnswers` retorna `{ riskLevel, score, summary, suggestions, urgency }`.
-5. `TriageAnswer.status='COMPLETED'`, `riskLevel` e `score` preenchidos.
-6. Cria `AiReport` (type=`triage`) com summary e suggestions.
-7. **Gera metas automaticamente** via `goalService.generateGoalsFromTriage` (ver §5).
-8. Credita **+20 health-coins** pelo bônus de triagem.
-9. Emite Socket.io `triage:completed` (e `triage:alert` para médicos se risco HIGH/CRITICAL).
+Oito doenças (apneia, cardiovascular, DM2, hipotireoidismo, síndrome metabólica,
+depressão, arritmia, DPOC), idêntica à v7 (um teste "golden" compara com a v7):
 
-### 4.3 Níveis de risco
+- evidência objetiva da pulseira entra no Bayes com peso máximo;
+- a próxima pergunta é a de maior **ganho de informação por custo**, com
+  penalização de redundância e modo "alvo" quando uma hipótese lidera;
+- após cada resposta, os **red flags** (`redFlags.js`, em código) são verificados;
+- encerra com posterior ≥ 80% ou 18 perguntas;
+- STOP-BANG, PHQ-9, FINDRISC e Framingham são calculados em paralelo e
+  reforçam o nível (PHQ-9 grave = CRITICAL; os outros sobem até HIGH).
 
-| Nível          | Quando ocorre (simulador local)                              | Score      |
-|----------------|---------------------------------------------------------------|------------|
-| `LOW`          | Sem queixas relevantes ou apenas estado normal                | 15–35      |
-| `MODERATE`     | Sintomas comuns: febre, náusea, dor de cabeça, fadiga         | 45–70      |
-| `HIGH`         | Sinais de alarme: dor no peito, falta de ar grave, paralisia  | 78–90      |
-| `CRITICAL`     | (reservado para emergências graves — produção pode usar mais granular) | — |
-| `INCONCLUSIVE` | Resposta vazia ou muito curta (< 8 chars somando tudo)         | `null`     |
+### 4.4 Fase oncológica ("etapa 2 de 2")
 
-Com `OPENAI_API_KEY` configurada, o GPT-4o tem maior nuance, mas o contrato
-de saída é o mesmo (validamos os 4-5 níveis aceitos).
+Até **6 perguntas** do painel `ONCOLOGIA`, escolhidas pelo `questionRunner`:
+`score = Σ |ln LR+| / custo`, somando só os cânceres **elegíveis** (sexo e idade
+mínima). A entropia global não serve aqui (com P ≈ 0,2% quase não há entropia).
+Não pergunta o que já foi respondido nem o que um achado objetivo substitui. Cada
+pergunta traz o "por que estamos perguntando" em linguagem calma. A fase pode ser
+desligada com `ONCO_PHASE_ENABLED = false` (volta à triagem só crônica).
 
-### 4.4 Simulador local de IA
+### 4.5 Como o risco de câncer é calculado
 
-Implementado em `services/aiSimulator.js`. **Estratégia**:
+Cinco cânceres: colorretal, pulmão, mama, próstata e colo do útero. Detalhe e
+fonte de cada número: [`Docs/base-clinica-oncologia.md`](./Docs/base-clinica-oncologia.md).
 
-1. **Concatena** todas as respostas em uma string lowercase.
-2. **Bandeira vermelha** (sintomas críticos):
-   - `dor no peito`, `dor de peito`, `pressão no peito`
-   - `falta de ar grave`, `dispneia`, `sufoco`
-   - `sangramento`, `tontura forte`, `desmaio`
-   - `paralisia`, `fala enrolada`
-3. **Bandeira amarela** (sintomas comuns):
-   - `febre`, `náusea`, `vômito`, `tontura`
-   - `dor de cabeça`, `cefaleia`, `fraqueza`
-   - `cansaço`, `fadiga`, `palpitação`
-4. Se texto for muito curto (< 8 chars) → `INCONCLUSIVE`.
-5. Sem nenhuma das bandeiras → `LOW`.
-6. Score, sugestões e urgência são gerados em função do nível.
+1. **Prior** = probabilidade de diagnóstico em 2 anos ≈ 2 × a incidência anual
+   da faixa de idade e sexo (GLOBOCAN 2022 Brasil, calibrado pela taxa bruta do
+   INCA 2026).
+2. **Fatores de risco** (fumo, história familiar, álcool, IMC, Papanicolau
+   atrasado...) **multiplicam** o prior (`PriorRule`, efeito `multiply`).
+3. **Sintomas, exames e balança** entram só como likelihood:
+   `logit(posterior) = logit(prior) + Σ peso × ln LR`. "Sim" usa LR+, "não" usa
+   LR−; "não sei" (`null`) conta como respondida e não vira evidência.
+4. **Risco relativo** = posterior ÷ prior da faixa (a média da mesma idade e sexo).
+5. **Categoria** (`riskEngine`):
 
-### 4.5 Sugestões geradas
+| Categoria    | Regra                                   | No banco  |
+|--------------|-----------------------------------------|-----------|
+| `INVESTIGAR` | posterior ≥ 3% (limiar do NICE NG12)    | `HIGH`    |
+| `ATENÇÃO`    | posterior ≥ 1% **ou** risco relativo ≥ 2| `MODERATE`|
+| `ROTINA`     | o resto                                 | `LOW`     |
 
-| Nível        | Sugestões padrão                                                  |
-|--------------|-------------------------------------------------------------------|
-| `HIGH`       | Procurar atendimento em 24h · pronto-socorro se piorar · manter pulseira |
-| `MODERATE`   | Agendar consulta em 7 dias · hidratação e descanso · acompanhar pulseira |
-| `LOW`        | Sinais normais · manter rotina e hábitos saudáveis                |
-| `INCONCLUSIVE` | Refazer triagem em 3–7 dias · continuar monitorando              |
+Os limiares (3% e 1%) são colunas de `Condition` e a médica pode editá-los.
+Cada resultado traz o **"por quê" fator a fator** (contribuição de cada
+evidência) e a conta fecha: `logit(prior) + Σ delta = logit(posterior)`.
+
+**Exibição.** O naive Bayes fica confiante demais com evidências correlacionadas
+(FIT+ e anemia, por exemplo). Por isso acima de **20%** a tela mostra "≥20%"
+(o número exato continua no motor). A **médica** vê o % em 2 anos, marcado como
+estimativa didática; o **visitante** e o **paciente** veem a categoria, "vezes a
+média da sua idade" e a frequência natural ("~3 em 1.000"), sem vermelho. O
+risco relativo não é mostrado em INVESTIGAR ("285× a média" assusta e o modelo
+exagera).
+
+### 4.6 Exames e balança como evidência
+
+- **Exames** (`labEvidence.js`): cada `LabRule` liga o nome de um achado de
+  `ExamResult.findings` (por alias, sem acento, nunca por prefixo: "hemoglobina
+  glicada" não vira hemoglobina) a um sintoma, com operador e limiar. Exemplos:
+  Hb < 13 (homem) ou < 12 (mulher), sangue oculto/FIT positivo, BI-RADS 4/5, PSA
+  acima do corte da faixa de idade, Papanicolau alterado, HPV de alto risco. Vale
+  o exame mais recente do mesmo sintoma; exame com mais de 365 dias é ignorado
+  (`maxAgeDays`); resultado normal só vira evidência se a regra tem
+  `emitNegative`; vírgula decimal é aceita.
+- **Tendência de peso** (`wearableEvidence.collectWeightTrend`): com leituras de
+  peso nos últimos 180 dias, queda ≥ **5%** em relação ao maior peso anterior vira
+  o achado `perda_peso_objetiva`. Só vale com série suficiente ("pesado na
+  balança"). Quando a balança confirma a perda, a resposta "perdi peso" **não é
+  contada de novo** nos cânceres que usam a balança (`riskEngine.SUPERSEDES`).
+
+### 4.7 Rastreamento
+
+`screening.js` escolhe, para cada câncer que vale para o sexo da pessoa, a regra
+de maior prioridade que se aplica:
+
+| Status                  | Significado                                              |
+|-------------------------|----------------------------------------------------------|
+| `INDICADO_AGORA`        | regra POPULACIONAL ou ALTO_RISCO na faixa de idade       |
+| `DECISAO_COMPARTILHADA` | conversar com o médico (ex.: PSA)                        |
+| `FUTURO`                | vai valer quando chegar à idade inicial (ex.: aos 45)    |
+
+Exemplos: FIT bienal de 50 a 75 anos (e colonoscopia para alto risco); mamografia
+de 50 a 74 (anual de 40 a 49 por decisão compartilhada, ou de 30 a 74 em alto
+risco); DNA-HPV ou preventivo de 25 a 64; tomografia de baixa dose para
+fumante/ex-fumante de alto risco; PSA por decisão compartilhada. Câncer em
+**INVESTIGAR** não recebe "faça o rastreamento": o próximo passo é a avaliação
+médica (`investigate: true`).
+
+### 4.8 Fechamento e níveis
+
+O `finalize` junta perfil, respostas, exames e balança no `riskEngine.assess`. O
+nível final da triagem é o **maior entre o crônico e o oncológico**: ROTINA não
+sobe nada, ATENÇÃO sobe até `MODERATE`, INVESTIGAR até `HIGH`. Red flag manda no
+nível (`CRITICAL` em emergência, `HIGH` nos demais), mas o risco oncológico do que
+já foi respondido continua no resultado.
+
+| Nível      | Quando ocorre                                                               |
+|------------|------------------------------------------------------------------------------|
+| `LOW`      | crônico baixo, câncer em ROTINA e sem red flag                              |
+| `MODERATE` | crônico moderado, ou algum câncer em ATENÇÃO                                |
+| `HIGH`     | crônico alto, red flag não emergencial, ou algum câncer em INVESTIGAR       |
+| `CRITICAL` | emergência (red flag) ou PHQ-9 grave; no demo, o João por DM2 ≥ 85%         |
+
+Depois: grava `COMPLETED`, cria o `AiReport` (`triage`), gera as metas (§5.3),
+credita +20 coins e emite `triage:completed` ao paciente. Câncer em INVESTIGAR cria
+uma `Notification` ALERT para as médicas vinculadas; HIGH/CRITICAL emitem
+`triage:alert` (§8.2). O confete só sai quando não há risco algum.
+
+### 4.9 Sugestões
+
+Por nível (HIGH/CRITICAL: avaliação em 24h; MODERATE: consulta em até 7 dias; LOW:
+manter a rotina), mais exames conforme as escalas e, por câncer, "procurar
+avaliação médica sobre X (não é diagnóstico)" ou o rastreamento indicado.
+
+### 4.10 Onde o LLM e o simulador ainda entram
+
+Triagem e teste rápido **não** chamam LLM. `openaiService`/`aiSimulator` seguem
+em: análise de exames (placeholder `INCONCLUSIVE` sem chave), relatório completo
+da médica (§6) e texto de apoio. O `aiSimulator` é determinístico, por palavras-chave.
 
 ---
 
@@ -429,8 +514,10 @@ Em `appointmentRoutes.js::create`:
 
 - Pulseira → `wearableRoutes.js::analyzeAndAlert` cria notificação quando a
   IA classifica vital como severidade `medium` ou `high`.
-- Triagem com risco HIGH/CRITICAL → potencialmente notifica todos os médicos
-  vinculados (via Socket.io, sem persistência hoje).
+- Triagem com câncer em INVESTIGAR → `Notification` ALERT ("Triagem: sinais para
+  investigar") para cada médica vinculada.
+- Triagem com risco HIGH/CRITICAL → evento Socket.io `triage:alert` para a sala
+  `user:<userId>` de cada médica vinculada (sem persistência; só o evento).
 - Exames processados → notificação INFO ao paciente.
 
 ### 8.3 Leitura
@@ -540,7 +627,7 @@ Como SQLite via Prisma não suporta `Json` nativo, os campos abaixo são
 | `Patient`        | `allergies`    | string[]     |
 | `Patient`        | `chronicConds` | string[]     |
 | `ExamResult`     | `findings`     | object[]     |
-| `TriageAnswer`   | `answers`      | object[]     |
+| `TriageAnswer`   | `answers`      | object (estado da sessão: perfil, respostas, fase, resultado) |
 | `AiReport`       | `suggestions`  | object[]     |
 | `Notification`   | `metadata`     | object       |
 | `WearableData`   | `payload`      | object       |
@@ -571,7 +658,12 @@ Prisma 5 rejeita strings em `skip`/`take`.
 | Refresh token usado é invalidado                                           | `authService.refresh` faz delete + insert na mesma chamada |
 | Mudança de senha desloga em todos os dispositivos                          | `authService.changePassword` deleta `RefreshToken` do user |
 | Conflito de agenda do médico bloqueia novo agendamento                     | `appointmentRoutes.create` testa janela ±duration     |
-| Triagem com risco HIGH/CRITICAL avisa médicos                              | Socket.io `triage:alert` para sala `doctors`          |
+| Triagem com risco HIGH/CRITICAL avisa só as médicas vinculadas             | Socket.io `triage:alert` para a sala `user:<userId>` de cada vínculo (`DoctorPatient`) |
+| Teste rápido público não grava nada e não loga o corpo                     | `quickTestService` puro; `publicRoutes` sem Prisma de escrita; morgan só registra a URL |
+| Câncer nunca sai como diagnóstico                                          | Categoria + "estimativa didática" + disclaimer em toda tela de resultado |
+| Fator demográfico/de risco entra só no prior; sintoma/exame/balança só como likelihood | Teste de contrato (`kb.priors.test.js`) |
+| Base de conhecimento só é editável com `KB_EDIT=true`                      | `knowledgeService.assertEditable` (fail-closed: ausente ou outro valor = 403) |
+| Toda edição da base deixa histórico e muda a versão                        | `KnowledgeVersion` gravada na mesma transação do PATCH |
 | Sem `OPENAI_API_KEY` o sistema continua funcional                          | `openaiService` tem fallbacks em todos os 4 métodos   |
 | Score, sparklines e cards refletem a pulseira em 1s                        | `useLiveVitals` + `useCountUp` no frontend            |
 
@@ -586,6 +678,13 @@ Prisma 5 rejeita strings em `skip`/`take`.
 | Médico/Painel        | `backend/src/services/doctorService.js`                  |
 | Exames               | `backend/src/services/examService.js`                    |
 | Triagem              | `backend/src/services/triageService.js`                  |
+| Motor de risco       | `backend/src/services/clinical/` (`bayes`, `riskEngine`, `questionRunner`, `labEvidence`, `screening`) |
+| Base de conhecimento | `backend/src/services/clinical/kb/kbRepository.js` + `backend/src/prisma/seedKnowledge.js` |
+| Dados de partida     | `backend/src/services/clinical/data/` (`oncology.js`, `chronicCatalog.js`, `chronicPriorRules.js`) |
+| Teste rápido público | `backend/src/services/quickTestService.js` + `routes/publicRoutes.js` |
+| Painel de riscos     | `backend/src/services/riskService.js`                    |
+| Base da IA           | `backend/src/services/knowledgeService.js` + `routes/knowledgeRoutes.js` |
+| Stand                | `scripts/stand.mjs`, `scripts/qr.mjs`, `render.yaml`      |
 | Metas                | `backend/src/services/goalService.js`                    |
 | Coins                | `backend/src/services/coinService.js`                    |
 | Recompensas          | `backend/src/services/rewardService.js`                  |
@@ -597,3 +696,120 @@ Prisma 5 rejeita strings em `skip`/`take`.
 | JWT                  | `backend/src/config/jwt.js`                              |
 | Schema do banco      | `backend/src/prisma/schema.prisma`                       |
 | Dados demo (seed)    | `backend/src/prisma/seed.js`                             |
+
+---
+
+## 15. Teste rápido público (`/teste`)
+
+`POST /api/public/quick-test`, sem login, para o visitante da feira
+(`quickTestService`, puro).
+
+- **Sem estado e nada gravado.** O corpo traz `{ profile, answers }`, o que o
+  visitante já respondeu; a resposta é a próxima etapa. Não há tabela, sessão
+  nem log do corpo (morgan registra só a URL; o `errorMiddleware` só loga erro 500).
+- **Etapas:** `PROFILE` (falta idade ou sexo; só esses dois são obrigatórios),
+  `BLOCKED` (menor de **18 anos**), `QUESTION` (painel `RAPIDO`, até **8**
+  perguntas, com follow-ups) e `RESULT`.
+- **Validação:** campos fora da lista dão 422; só perguntas do painel `RAPIDO`;
+  no máximo 30 respostas; valores `true/false/0/1/"sim"/"não"` ou `null`.
+  Resposta de pergunta que não vale para o perfil (homem com "nódulo na mama")
+  é descartada. Limite de 300 req/min por IP e corpo de 16 KB.
+- **Red flag** encerra na hora.
+- **Resultado:** categoria por câncer, risco relativo, frequência natural,
+  rastreamento (agora e futuro) e "o que você pode mudar". Sem exames nem
+  balança, o teste não chega a INVESTIGAR para o perfil do Roberto; o INVESTIGAR
+  dele aparece no painel da médica.
+- **Aviso:** "Teste educativo de risco... Não é diagnóstico... Nada do que você
+  respondeu foi gravado."
+- **Frontend:** `?kiosk=1` volta à capa após 120 s parado; "Demonstração da
+  equipe" preenche personas (inclusive uma de pulmão em INVESTIGAR).
+
+## 16. Base da IA (base de conhecimento)
+
+### 16.1 O que existe
+
+Tabelas `ClinicalSource`, `Condition`, `PriorRule`, `Symptom`,
+`ConditionSymptom`, `LabRule`, `ScreeningRule` e `KnowledgeVersion` (13
+condições: 8 crônicas e 5 cânceres). Toda condição, regra, probabilidade, regra
+de exame e de rastreamento aponta uma **fonte** (`sourceCode`) com citação, URL e
+ano. A origem é o código (`services/clinical/data/`); o banco é a cópia editável.
+
+### 16.2 Edição (`/doctor/knowledge`, `/api/knowledge`)
+
+- **Quem edita:** só `DOCTOR`, e só com `KB_EDIT=true` (ou `1`, `yes`, `on`).
+  **Fail-closed:** ausente ou qualquer outro valor = só leitura (PATCH e reset
+  respondem 403; a leitura continua). Local e `npm run stand` ligam; o Render
+  (`render.yaml`) e o Docker deixam desligado, porque o cadastro de médica é
+  aberto e as senhas da demo são públicas.
+- **O que se edita:** valores, textos e ativo/inativo: probabilidades (`pSx`,
+  `pNoSx`, ou `lrPos`, que ajusta `pNoSx`), prior base e máximo, limiares, idade
+  mínima, valor e ativação de regras de prior, limiar e peso de regras de
+  exame, idades e intervalo do rastreamento. A **estrutura** (`when`, `effect`,
+  `operator`, `kind`) e a criação/remoção de linhas não são editáveis.
+- **Validação:** probabilidades entre 0 e 1, tipos e limites por campo; campo fora
+  da lista dá 422 (`checkExact`).
+- **Histórico:** cada PATCH roda numa transação e grava uma linha de
+  `KnowledgeVersion` por campo (valor antigo, novo, quem, motivo opcional
+  `changeNote`). A versão do kb é o maior `version`. O cache do `kbRepository` é
+  invalidado: a próxima triagem, teste rápido ou painel já usa o valor novo.
+- **Restaurar padrão** (`POST /api/knowledge/reset`): regrava a base com os
+  valores do código, numa transação, e registra o reset no histórico.
+- **Simular em paciente** (tela): mostra o risco do paciente escolhido antes e
+  depois de cada edição.
+- **Sinais de alarme** (red flags) ficam **em código**; a tela só os lista.
+
+### 16.3 Ressalvas
+
+1. **`ensureSeeded` (start do servidor) não sobrescreve base editada.** Base nunca
+   editada (ou logo após um reset) é alinhada ao código; base já editada só ganha
+   o que falta. O caminho de volta é "Restaurar padrão".
+2. **`npm run db:seed` manual faz upsert da base inteira** e desfaz as edições da
+   médica nos itens que existem no código (o histórico é mantido). `npm run
+   db:reset` e `npm run stand` (sem `--keep-db`) passam por ele.
+3. Editar `minAge` para vazio num câncer o torna elegível em qualquer idade; é
+   escolha da médica e o reset desfaz.
+4. Banco criado antes do schema novo: o servidor falha ao subir com a instrução
+   de rodar `npm run setup` (mantém os dados) ou `npm run db:reset`.
+
+## 17. Painel de riscos
+
+`GET /api/patient/risk` (o próprio paciente) e `GET /api/doctor/patients/:id/risk`
+(médica vinculada, `assertLink`) chamam `riskService.assessPatient`, que calcula
+**na hora** (nada é gravado) com o kb atual:
+
+- perfil do cadastro + perfil e respostas da **última triagem concluída**;
+- exames (`labEvidence`) e snapshot da pulseira, com a **tendência de peso**;
+- sem triagem concluída, cai no perfil do cadastro (`profileFrom: CADASTRO`).
+
+O resultado muda sozinho quando a médica edita a base ou quando chega exame ou
+peso novo. A médica vê o % em 2 anos, o limiar de 3% e o "por quê"; o aviso diz
+que são estimativas didáticas.
+
+## 18. Personas da demo
+
+O seed (`db:seed`) cria a médica e três pacientes vinculados, e **roda as
+triagens pelo motor de verdade** (mesmo caminho do frontend). Se a história
+mudar, o seed falha alto em vez de levar o problema para o stand.
+
+| Persona | Credenciais | Câncer | Triagem |
+|---|---|---|---|
+| **Roberto**, 63, ex-fumante (35 maços-ano, parou há 8 anos) | `roberto@healthinpulse.dev` / `Roberto@123` | **colorretal em INVESTIGAR** (FIT+, Hb 10,9, balança -9,5% em 90 dias, mudança no intestino); pulmão em ATENÇÃO | HIGH; médica recebe o alerta |
+| **Marina**, 34 | `marina@healthinpulse.dev` / `Marina@123` | **mama em ATENÇÃO** (história familiar); colo do útero em rotina; mamografia e DNA-HPV indicados | MODERATE (crônico LOW) |
+| **João**, 58 | `joao@healthinpulse.dev` / `Joao@123` | tudo em ROTINA (FIT e PSA por decisão compartilhada) | CRITICAL pela parte crônica (DM2) |
+| **Dra. Ana Beatriz Souza** | `doctor@healthinpulse.dev` / `Doctor@123` | vinculada aos três | |
+
+## 19. Operação: testes, stand e Render
+
+- `npm test` (backend, `node --test`): motor (golden da v7 e matemática), base de
+  conhecimento (banco igual ao seed, fontes, priors), exames, rastreamento,
+  personas, teste rápido, alerta de triagem, escopo do socket, portão da demo e
+  cadastro.
+- `npm run smoke`: sobe o backend e confere login das personas, teste rápido,
+  painel de riscos, Base da IA e o frontend, inclusive `/teste`.
+- `npm run stand` (flags `--keep-db`, `--skip-build`, `--port=`, `--check`),
+  `npm run qr`: ver o [README](./README.md#feira-stand).
+- **Render:** `KB_EDIT=false`, `DEMO_PASSWORD` e `OPENAI_API_KEY` vazios na feira,
+  `AUTH_RATE_LIMIT=300`, `TRUST_PROXY=1`. Plano grátis dorme após 15 min: monitor
+  (UptimeRobot ou cron-job.org) em `/health` a cada 10 min. O disco é apagado a
+  cada restart e o entrypoint recria o banco com a demo.
+- Material da banca em [`Docs/feira/`](./Docs/feira/).
