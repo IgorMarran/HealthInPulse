@@ -1,7 +1,7 @@
 {
   "name": "healthinpulse-backend",
-  "version": "1.0.0",
-  "description": "API backend do HealthInPulse v7",
+  "version": "8.0.0",
+  "description": "API backend do HealthInPulse v8",
   "main": "src/server.js",
   "scripts": {
     "dev":          "nodemon src/server.js",

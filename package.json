@@ -1,8 +1,8 @@
 {
   "name": "healthinpulse",
-  "version": "7.0.0",
+  "version": "8.0.0",
   "private": true,
-  "description": "HealthInPulse v7: comandos de raiz para rodar backend e frontend juntos",
+  "description": "HealthInPulse v8: comandos de raiz para rodar backend e frontend juntos",
   "scripts": {
     "setup": "node scripts/setup.mjs",
     "predev": "node scripts/setup.mjs --check",
