@@ -6,6 +6,9 @@ import { lazy, Suspense } from 'react';
 const LoginPage        = lazy(() => import('@/pages/auth/LoginPage'));
 const RegisterPage     = lazy(() => import('@/pages/auth/RegisterPage'));
 
+// Teste rápido do stand (público, sem login)
+const QuickTest        = lazy(() => import('@/pages/public/QuickTest'));
+
 // Patient
 const PatientLayout    = lazy(() => import('@/components/layout/PatientLayout'));
 const PatientDashboard = lazy(() => import('@/pages/patient/Dashboard'));
@@ -44,6 +47,9 @@ export default function AppRoutes() {
         {/* Público */}
         <Route path="/login"    element={<PublicRoute><LoginPage /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+
+        {/* Teste rápido: FORA do PublicRoute (quem está logado também abre) */}
+        <Route path="/teste"    element={<QuickTest />} />
 
         {/* Paciente */}
         <Route path="/patient" element={<RoleRoute role="PATIENT"><PatientLayout /></RoleRoute>}>
