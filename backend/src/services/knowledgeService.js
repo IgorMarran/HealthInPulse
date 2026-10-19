@@ -258,7 +258,11 @@ const createKnowledgeService = ({ prisma, repo }) => {
   const history = async ({ limit = 50, offset = 0, entity = null, entityId = null } = {}) => {
     const take = Math.min(Math.max(Number(limit) || 50, 1), 200);
     const skip = Math.max(Number(offset) || 0, 0);
-    const where = { ...(entity && { entity }), ...(entityId && { entityId }) };
+    // ?entity=a&entity=b chega como lista: só texto vira filtro
+    const where = {
+      ...(typeof entity === 'string' && entity && { entity }),
+      ...(typeof entityId === 'string' && entityId && { entityId }),
+    };
     const [total, rows] = await prisma.$transaction([
       prisma.knowledgeVersion.count({ where }),
       prisma.knowledgeVersion.findMany({ where, orderBy: { version: 'desc' }, take, skip }),
