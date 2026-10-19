@@ -225,6 +225,28 @@ const getDashboard = async (doctorId) => {
   };
 };
 
+// ─── Médicos vinculados (salas do socket) ────────────────────
+// Dado clínico em tempo real vai SÓ para a sala `user:<userId>` de cada
+// médico vinculado ao paciente (DoctorPatient), nunca para a sala
+// `doctors` inteira: médico sem vínculo não pode ver sinal vital de quem
+// não é paciente dele. Mesma regra do `triage:alert` (triageService).
+// `deps` ({ io, db }) existe para o teste.
+const linkedDoctorUserIds = async (patientId, db = prisma) => {
+  const links = await db.doctorPatient.findMany({
+    where: { patientId }, include: { doctor: { select: { userId: true } } },
+  });
+  return [...new Set(links.map(l => l.doctor?.userId).filter(Boolean))];
+};
+
+const emitToLinkedDoctors = async (patientId, event, payload, deps = {}) => {
+  try {
+    const io = deps.io ?? require('../config/socket').getIO(); // tardio: socket só existe com o servidor
+    for (const userId of await linkedDoctorUserIds(patientId, deps.db ?? prisma)) {
+      io.to(`user:${userId}`).emit(event, payload);
+    }
+  } catch (_) { /* socket opcional */ }
+};
+
 // ─── Consolidado e histórico (para abas Wearable / Histórico / Relatório) ───
 const assertLink = async (doctorId, patientId) => {
   const link = await prisma.doctorPatient.findUnique({
@@ -370,4 +392,5 @@ module.exports = {
   getPatients, getPatientDetail, linkPatient, unlinkPatient,
   getDashboard,
   getPatientConsolidated, getPatientHistory,
+  assertLink, linkedDoctorUserIds, emitToLinkedDoctors,
 };

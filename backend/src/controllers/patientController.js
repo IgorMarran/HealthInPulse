@@ -1,4 +1,5 @@
 const patientService = require('../services/patientService');
+const doctorService  = require('../services/doctorService');
 
 const getProfile = async (req, res, next) => {
   try {
@@ -28,11 +29,8 @@ const addVitalSign = async (req, res, next) => {
     const patient  = await patientService.getProfile(req.user.id);
     const vital    = await patientService.addVitalSign(patient.id, req.body);
 
-    // Emite em tempo real para médicos vinculados
-    const { getIO } = require('../config/socket');
-    try {
-      getIO().to('doctors').emit('vital:new', { patientId: patient.id, vital });
-    } catch (_) { /* socket opcional */ }
+    // Emite em tempo real só para os médicos vinculados (sala de cada um)
+    await doctorService.emitToLinkedDoctors(patient.id, 'vital:new', { patientId: patient.id, vital });
 
     res.status(201).json(vital);
   } catch (err) { next(err); }

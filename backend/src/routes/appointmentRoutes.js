@@ -37,9 +37,11 @@ const create = async ({ patientId, doctorId, scheduledAt, duration, notes }) => 
     },
   });
 
-  // Notifica médico em tempo real
+  // Notifica médico em tempo real. A sala é por User (`user:<userId>`,
+  // config/socket.js), não pelo id do Doctor.
   try {
-    getIO().to(`user:${appointment.doctor.userId}`).emit('appointment:new', appointment);
+    const doctor = await prisma.doctor.findUnique({ where: { id: doctorId }, select: { userId: true } });
+    if (doctor) getIO().to(`user:${doctor.userId}`).emit('appointment:new', appointment);
   } catch (_) {}
 
   return appointment;
@@ -70,7 +72,11 @@ const list = async ({ patientId, doctorId, status, page = 1, limit = 20 }) => {
 };
 
 const updateStatus = async (appointmentId, actorId, { status, notes }) => {
-  const appt = await prisma.appointment.findUnique({ where: { id: appointmentId } });
+  const appt = await prisma.appointment.findUnique({
+    where:   { id: appointmentId },
+    // userId de cada lado: as salas do socket são `user:<userId>`
+    include: { patient: { select: { userId: true } }, doctor: { select: { userId: true } } },
+  });
   if (!appt) throw Object.assign(new Error('Consulta não encontrada'), { status: 404 });
 
   // Só médico confirma/cancela; paciente só cancela
@@ -86,8 +92,8 @@ const updateStatus = async (appointmentId, actorId, { status, notes }) => {
   // Notifica a outra parte
   try {
     const io = getIO();
-    io.to(`user:${appt.patientId}`).emit('appointment:updated', updated);
-    io.to(`user:${appt.doctorId}`).emit('appointment:updated',  updated);
+    io.to(`user:${appt.patient.userId}`).emit('appointment:updated', updated);
+    io.to(`user:${appt.doctor.userId}`).emit('appointment:updated',  updated);
   } catch (_) {}
 
   return updated;
