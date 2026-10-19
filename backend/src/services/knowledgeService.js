@@ -8,7 +8,10 @@
 // depois do commit, chama kbRepository.invalidate(). A próxima triagem,
 // teste rápido ou painel de risco já usa o kb novo (versão nova).
 //
-// KB_EDIT=false (Render) deixa a base só leitura: PATCH e reset dão 403.
+// Fechado por padrão: só KB_EDIT=true (ou 1/yes/on) libera PATCH e reset.
+// Sem a variável (Render, Docker, CI) a base é só leitura e eles dão 403;
+// na demo pública qualquer um pode se cadastrar como médico. O setup
+// (scripts/setup.mjs) grava KB_EDIT=true no .env local e no do stand.
 //
 // Fábrica createKnowledgeService({ prisma, repo }) para os testes usarem
 // outro banco; o módulo exporta também a instância do app.
@@ -20,9 +23,12 @@ const { listRedFlagDefinitions } = require('./clinical/redFlags');
 const httpError = (status, message, extra = {}) => Object.assign(new Error(message), { status, ...extra });
 
 // ─── Edição ligada? ─────────────────────────────────────────────────
-const isEditable = () => !['false', '0', 'no', 'off'].includes(String(process.env.KB_EDIT ?? '').trim().toLowerCase());
+const isEditable = () => ['true', '1', 'yes', 'on'].includes(String(process.env.KB_EDIT ?? '').trim().toLowerCase());
 const assertEditable = () => {
-  if (!isEditable()) throw httpError(403, 'A base de conhecimento está em modo só leitura neste servidor (KB_EDIT=false).');
+  if (!isEditable()) {
+    throw httpError(403, 'A base de conhecimento está em modo só leitura neste servidor. '
+      + 'Para editar, rode com KB_EDIT=true (o `npm run setup` já grava isso no .env local).');
+  }
 };
 
 // ─── Campos editáveis por entidade ──────────────────────────────────

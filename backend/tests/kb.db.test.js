@@ -267,15 +267,15 @@ const withKbEdit = async (value, fn) => {
   try { return await fn(); } finally { if (old == null) delete process.env.KB_EDIT; else process.env.KB_EDIT = old; }
 };
 
-test('knowledgeService.patch: transação + histórico + invalidate; versão sobe e o posterior muda', async () => {
+test('knowledgeService.patch: transação + histórico + invalidate; versão sobe e o posterior muda', () => withKbEdit('true', async () => {
   await freshDb();
   const repo = createKbRepository(prisma);
   const svc = createKnowledgeService({ prisma, repo });
   const before = await repo.get();
   const pBefore = lungPosterior(before);
 
-  const res = await withKbEdit(null, () => svc.patch('condition-symptoms', 'cs:CA_PULMAO:hemoptise',
-    { pSx: 0.4 }, { changedBy: 'Dra. Teste', note: 'teste' }));
+  const res = await svc.patch('condition-symptoms', 'cs:CA_PULMAO:hemoptise',
+    { pSx: 0.4 }, { changedBy: 'Dra. Teste', note: 'teste' });
   // pSx e o lrPos recalculado (pSx/pNoSx), uma linha de histórico cada
   assert.deepEqual(res.changes.map(c => c.field).sort(), ['lrPos', 'pSx']);
   assert.equal(res.item.lrPos, Number((0.4 / 0.015).toFixed(2)));
@@ -301,9 +301,9 @@ test('knowledgeService.patch: transação + histórico + invalidate; versão sob
   // LR+ direto: deriva 1 − especificidade
   const lr = await svc.patch('condition-symptoms', 'cs:CA_PULMAO:hemoptise', { lrPos: 20 });
   assert.equal(lr.item.pNoSx, 0.02);
-});
+}));
 
-test('knowledgeService.patch: valida campo, faixa e regras entre campos sem gravar nada', async () => {
+test('knowledgeService.patch: valida campo, faixa e regras entre campos sem gravar nada', () => withKbEdit('true', async () => {
   await freshDb();
   const repo = createKbRepository(prisma);
   const svc = createKnowledgeService({ prisma, repo });
@@ -325,23 +325,28 @@ test('knowledgeService.patch: valida campo, faixa e regras entre campos sem grav
 
   const ok = await svc.patch('prior-rules', 'pr:CA_PULMAO:22', { amount: 4.2, active: true });
   assert.deepEqual(ok.changes.map(c => c.field), ['amount']);
-});
+}));
 
-test('knowledgeService: KB_EDIT=false bloqueia patch e reset (403); leitura continua', async () => {
+test('knowledgeService: fechado por padrão; só KB_EDIT=true libera patch e reset (403); leitura continua', async () => {
   await freshDb();
   const repo = createKbRepository(prisma);
   const svc = createKnowledgeService({ prisma, repo });
-  await withKbEdit('false', async () => {
-    await assert.rejects(svc.patch('conditions', 'DPOC', { basePrior: 0.07 }), (e) => e.status === 403);
-    await assert.rejects(svc.reset(), (e) => e.status === 403);
-    const k = await svc.getKnowledge();
-    assert.equal(k.editable, false);
-    assert.equal(k.conditions.length, 13);
-  });
+  for (const value of [null, '', 'false', '0', 'qualquer']) {
+    await withKbEdit(value, async () => {
+      await assert.rejects(svc.patch('conditions', 'DPOC', { basePrior: 0.07 }), (e) => e.status === 403);
+      await assert.rejects(svc.reset(), (e) => e.status === 403);
+      const k = await svc.getKnowledge();
+      assert.equal(k.editable, false, `KB_EDIT=${value}`);
+      assert.equal(k.conditions.length, 13);
+    });
+  }
+  for (const value of ['true', 'TRUE', '1', 'yes', 'on']) {
+    await withKbEdit(value, async () => assert.equal((await svc.getKnowledge()).editable, true, `KB_EDIT=${value}`));
+  }
   assert.equal(await prisma.knowledgeVersion.count(), 0);
 });
 
-test('knowledgeService.reset: volta ao padrão e o posterior volta ao original', async () => {
+test('knowledgeService.reset: volta ao padrão e o posterior volta ao original', () => withKbEdit('true', async () => {
   await freshDb();
   const repo = createKbRepository(prisma);
   const svc = createKnowledgeService({ prisma, repo });
@@ -359,4 +364,4 @@ test('knowledgeService.reset: volta ao padrão e o posterior volta ao original',
   assert.equal(h.items[0].entity, 'KB');
   assert.equal(h.items[0].field, 'reset');
   assert.equal(h.total, 4); // 2 campos do pSx/lrPos + limiar + reset
-});
+}));

@@ -39,7 +39,7 @@ Detalhes e alternativas (Codespaces, Docker) no [README da raiz](../README.md#co
 | `AUTH_RATE_LIMIT`    | `30`                    | requisições por 15 min em `/api/auth` (só em produção)     |
 | `FRONTEND_DIST`      | `../frontend/dist`      | build do Vite servido pelo backend, se existir             |
 | `DEMO_PASSWORD`      | vazio                   | senha da turma na frente de tudo (demo pública); vazio = sem portão |
-| `KB_EDIT`            | vazio (`false` no Render) | `false` deixa a Base da IA só leitura (PATCH e reset dão 403) |
+| `KB_EDIT`            | `true` no .env do setup | só `true` libera editar a Base da IA; ausente/outro valor = só leitura (PATCH e reset dão 403). No Render é `false` |
 | `PUBLIC_RATE_LIMIT`  | `300`                   | requisições por minuto por IP no teste rápido público      |
 
 ---

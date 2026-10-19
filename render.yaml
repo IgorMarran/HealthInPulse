@@ -27,7 +27,8 @@ services:
       # Sala de aula sai por um IP só; 30 logins/15 min trava a apresentação
       - key: AUTH_RATE_LIMIT
         value: '300'
-      # Base da IA só leitura na demo pública: editar fica no notebook do stand
+      # Base da IA só leitura na demo pública (já é o padrão sem a variável;
+      # fica explícito): editar fica no notebook do stand
       - key: KB_EDIT
         value: 'false'
       # Opcional. Recomendado deixar vazio na demo pública (simulador local):

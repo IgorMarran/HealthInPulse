@@ -148,6 +148,14 @@ function ensureEnv() {
     if (!created) fixes.push('OPENAI_API_KEY não parecia uma chave real; deixei vazia (usa o simulador local)');
   }
 
+  // Base da IA editável nesta máquina (dev e notebook do stand). Sem a
+  // variável o servidor fica só leitura (padrão seguro do Render/Docker).
+  // Valor já definido (ex.: KB_EDIT=false) é respeitado.
+  if (env.KB_EDIT === undefined) {
+    text = setEnvVar(text, 'KB_EDIT', 'true');
+    if (!created) fixes.push('KB_EDIT ausente; liguei a edição da Base da IA neste computador (KB_EDIT=true)');
+  }
+
   if (created || fixes.length) writeFileSync(ENV_FILE, text);
   if (created) ok('backend/.env criado com segredos JWT novos');
   else if (fixes.length) fixes.forEach((f) => warn(`.env corrigido: ${f}`));

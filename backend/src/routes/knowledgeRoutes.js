@@ -12,7 +12,7 @@ const { validate } = require('../middlewares/validationMiddleware');
 //         /lab-rules/:id, /screening-rules/:id
 //   POST  /reset                    volta aos valores de partida
 // Corpo do PATCH: { <campo>: valor, ..., changeNote?: 'motivo' }.
-// Com KB_EDIT=false (Render), PATCH e reset dão 403; a leitura continua.
+// Sem KB_EDIT=true (Render, Docker), PATCH e reset dão 403; a leitura continua.
 
 const sendError = (res, next) => (err) => {
   if (err.status === 422 && err.fields) {
