@@ -237,7 +237,7 @@ const finalize = async (triage, state, patientId) => {
     );
   } catch (e) { console.error('Erro ao gerar metas:', e.message); }
 
-  emitCompleted(patientId, triage.id, level, report.id);
+  await emitCompleted(patientId, triage.id, level, report.id);
 };
 
 const finalizeWithRedFlag = async (triage, state, patientId) => {
@@ -275,7 +275,7 @@ const finalizeWithRedFlag = async (triage, state, patientId) => {
     },
   });
 
-  emitCompleted(patientId, triage.id, level, report.id, true);
+  await emitCompleted(patientId, triage.id, level, report.id, true);
 };
 
 // ─── Construção da resposta para o frontend ────────────────────────
@@ -428,12 +428,19 @@ const computeBmi = (heightCm, weightKg) => {
   return Number((weightKg / (h * h)).toFixed(1));
 };
 
-const emitCompleted = (patientId, triageId, riskLevel, reportId, isRedFlag = false) => {
+// A sala do socket é por usuário (`user:<userId>`, ver config/socket.js);
+// patientId é o id do Patient, então busca o userId dele.
+const emitCompleted = async (patientId, triageId, riskLevel, reportId, isRedFlag = false) => {
   try {
     const io = getIO();
-    io.to(`user:${patientId}`).emit('triage:completed', {
-      triageId, riskLevel, reportId, isRedFlag,
+    const patient = await prisma.patient.findUnique({
+      where: { id: patientId }, select: { userId: true },
     });
+    if (patient) {
+      io.to(`user:${patient.userId}`).emit('triage:completed', {
+        triageId, riskLevel, reportId, isRedFlag,
+      });
+    }
     if (['HIGH', 'CRITICAL'].includes(riskLevel)) {
       io.to('doctors').emit('triage:alert', { patientId, riskLevel, triageId, isRedFlag });
     }
