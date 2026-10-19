@@ -434,14 +434,14 @@ const finalize = async (triage, state, patientId) => {
 const notifyDoctors = async (patientId, triageId, conditions) => {
   try {
     const { send } = require('../routes/notificationRoutes'); // tardio: rotas carregam middlewares
-    const [patient, links] = await Promise.all([
+    const [patient, doctorUserIds] = await Promise.all([
       prisma.patient.findUnique({ where: { id: patientId }, select: { fullName: true } }),
-      prisma.doctorPatient.findMany({ where: { patientId }, include: { doctor: { select: { userId: true } } } }),
+      linkedDoctorUserIds(patientId),
     ]);
     const labels = conditions.map(c => c.label.toLowerCase()).join(', ');
-    for (const link of links) {
+    for (const userId of doctorUserIds) {
       await send({
-        userId:   link.doctor.userId,
+        userId,
         type:     'ALERT',
         title:    'Triagem: sinais para investigar',
         message:  `${patient?.fullName ?? 'Paciente'}: ${labels} acima do limiar de 3% (triagem de risco, não diagnóstico).`,
@@ -654,10 +654,24 @@ const binarizeFallback = (raw) => {
 
 // A sala do socket é por usuário (`user:<userId>`, ver config/socket.js);
 // patientId é o id do Patient, então busca o userId dele.
-const emitCompleted = async (patientId, triageId, riskLevel, reportId, isRedFlag = false, extra = {}) => {
+//
+// O alerta (`triage:alert`, com nível e, se houver, os cânceres em
+// INVESTIGAR) vai SÓ para a sala `user:<userId>` de cada médico vinculado
+// ao paciente (DoctorPatient). Nada de dado clínico na sala `doctors`
+// inteira: médico sem vínculo não pode saber da triagem de quem não é
+// paciente dele. `deps` ({ io, db }) existe para o teste.
+const linkedDoctorUserIds = async (patientId, db = prisma) => {
+  const links = await db.doctorPatient.findMany({
+    where: { patientId }, include: { doctor: { select: { userId: true } } },
+  });
+  return [...new Set(links.map(l => l.doctor?.userId).filter(Boolean))];
+};
+
+const emitCompleted = async (patientId, triageId, riskLevel, reportId, isRedFlag = false, extra = {}, deps = {}) => {
   try {
-    const io = getIO();
-    const patient = await prisma.patient.findUnique({
+    const io = deps.io ?? getIO();
+    const db = deps.db ?? prisma;
+    const patient = await db.patient.findUnique({
       where: { id: patientId }, select: { userId: true },
     });
     if (patient) {
@@ -666,7 +680,9 @@ const emitCompleted = async (patientId, triageId, riskLevel, reportId, isRedFlag
       });
     }
     if (['HIGH', 'CRITICAL'].includes(riskLevel)) {
-      io.to('doctors').emit('triage:alert', { patientId, riskLevel, triageId, isRedFlag, ...extra });
+      for (const userId of await linkedDoctorUserIds(patientId, db)) {
+        io.to(`user:${userId}`).emit('triage:alert', { patientId, riskLevel, triageId, isRedFlag, ...extra });
+      }
     }
   } catch (_) {}
 };
@@ -699,6 +715,7 @@ const getTriageById = async (triageId, patientId) => {
 
 module.exports = {
   ONCO_PHASE_ENABLED,
+  emitCompleted, // exportado para o teste do escopo do alerta
   getQuestions,
   startTriage,
   answerTriage,
