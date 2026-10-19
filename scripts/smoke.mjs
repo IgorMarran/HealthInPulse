@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 // Teste de fumaça: sobe o backend de verdade e confere o caminho feliz.
 // Roda no CI (Windows, macOS, Linux) e serve para conferir uma máquina nova.
+// Confere login das personas, o teste rápido público, o painel de risco
+// da médica (Roberto em INVESTIGAR, Marina em ATENÇÃO, João em ROTINA), a
+// Base da IA e o frontend (incluindo /teste). Os dados vêm do seed: num
+// banco mexido, `npm run db:reset` volta à história da feira.
 //
 //   npm run smoke                 sobe o backend local (precisa do `npm run setup` antes)
 //   npm run smoke -- --url=URL    só testa um servidor já rodando (ex.: o deploy)
@@ -22,12 +26,22 @@ const DEMO_PASSWORD = process.argv.find((a) => a.startsWith('--demo-password='))
   ?.slice('--demo-password='.length);
 
 const DEMO_USERS = [
-  { email: 'joao@healthinpulse.dev',   password: 'Joao@123',   dashboard: '/api/patient/dashboard' },
-  { email: 'marina@healthinpulse.dev', password: 'Marina@123', dashboard: '/api/patient/dashboard' },
-  { email: 'doctor@healthinpulse.dev', password: 'Doctor@123', dashboard: '/api/doctor/dashboard' },
+  { email: 'joao@healthinpulse.dev',    password: 'Joao@123',    dashboard: '/api/patient/dashboard' },
+  { email: 'marina@healthinpulse.dev',  password: 'Marina@123',  dashboard: '/api/patient/dashboard' },
+  { email: 'roberto@healthinpulse.dev', password: 'Roberto@123', dashboard: '/api/patient/dashboard' },
+  { email: 'doctor@healthinpulse.dev',  password: 'Doctor@123',  dashboard: '/api/doctor/dashboard' },
+];
+const DOCTOR_EMAIL = 'doctor@healthinpulse.dev';
+
+// O que a médica vê de cada persona no painel de risco (seed da feira)
+const PERSONAS = [
+  { name: 'Roberto Alves Pereira', expect: { CA_COLORRETAL: 'INVESTIGAR' }, screening: { CA_PULMAO: 'INDICADO_AGORA' } },
+  { name: 'Marina Azevedo Lima',   expect: { CA_MAMA: 'ATENÇÃO' },          screening: { CA_MAMA: 'INDICADO_AGORA', CA_COLO_UTERO: 'INDICADO_AGORA' } },
+  { name: 'João Carlos Mendes',    level: 'ROTINA',                         screening: { CA_COLORRETAL: 'INDICADO_AGORA', CA_PROSTATA: 'DECISAO_COMPARTILHADA' } },
 ];
 
 let failures = 0;
+const tokens = {}; // e-mail → accessToken, depois do login
 let finished = false;
 let gateCookie = null; // cookie do portão da demo, depois da senha certa
 
@@ -129,6 +143,75 @@ async function checkDemoGate() {
   });
 }
 
+// JSON de uma rota da API (com o token da pessoa, se houver)
+async function api(path, { token, method = 'GET', body } = {}) {
+  const res = await http(`${BASE}${path}`, {
+    method,
+    headers: {
+      accept: 'application/json',
+      ...(body && { 'content-type': 'application/json' }),
+      ...(token && { authorization: `Bearer ${token}` }),
+    },
+    ...(body && { body: JSON.stringify(body) }),
+  });
+  const text = await res.text();
+  assert(res.ok, `${method} ${path} respondeu ${res.status}: ${text.slice(0, 200)}`);
+  return JSON.parse(text);
+}
+
+// Teste rápido público (/teste): sem login, do perfil ao resultado,
+// respondendo "não" a tudo. O frontend manda tudo a cada chamada.
+async function checkQuickTest() {
+  await check('teste rápido público: perfil → perguntas → resultado', async () => {
+    const first = await api('/api/public/quick-test', { method: 'POST', body: {} });
+    assert(first.stage === 'PROFILE', `primeira etapa ${first.stage}`);
+
+    const profile = { age: 63, sex: 'male', height: 175, weight: 80, smoker: true, packYears: 35, quitYears: 8 };
+    const answers = {};
+    let res;
+    for (let i = 0; i < 12; i++) {
+      res = await api('/api/public/quick-test', { method: 'POST', body: { profile, answers } });
+      if (res.stage !== 'QUESTION') break;
+      answers[res.question.id] = false;
+    }
+    assert(res.stage === 'RESULT', `terminou em ${res.stage} depois de ${Object.keys(answers).length} respostas`);
+    assert(Object.keys(answers).length > 0, 'nenhuma pergunta feita');
+    const codes = res.oncology?.conditions?.map((c) => c.code) ?? [];
+    assert(codes.includes('CA_COLORRETAL') && codes.includes('CA_PULMAO'), `condições: ${codes.join(', ')}`);
+    assert(res.screening?.some((s) => s.conditionCode === 'CA_PULMAO'), 'TC de pulmão não indicada');
+  });
+}
+
+// Painel de risco da médica (personas do seed) e a Base da IA
+async function checkDoctorRisk() {
+  const token = tokens[DOCTOR_EMAIL];
+  if (!token) return; // o login da médica já falhou acima
+
+  const { patients } = await api('/api/doctor/patients?limit=100', { token });
+  for (const p of PERSONAS) {
+    await check(`médica: risco de ${p.name.split(' ')[0]}`, async () => {
+      const patient = patients.find((x) => x.fullName === p.name);
+      assert(patient, `${p.name} não está entre os pacientes da médica (rode \`npm run db:reset\`)`);
+      const risk = await api(`/api/doctor/patients/${patient.id}/risk`, { token });
+      const levels = Object.fromEntries(risk.oncology.conditions.map((c) => [c.code, c.level]));
+      for (const [code, level] of Object.entries(p.expect ?? {})) {
+        assert(levels[code] === level, `${code}: ${levels[code]}, esperado ${level}`);
+      }
+      if (p.level) assert(risk.oncology.level === p.level, `nível ${risk.oncology.level}, esperado ${p.level}`);
+      for (const [code, status] of Object.entries(p.screening)) {
+        const s = risk.screening.find((x) => x.conditionCode === code);
+        assert(s?.status === status, `rastreio ${code}: ${s?.status ?? 'nenhum'}, esperado ${status}`);
+      }
+    });
+  }
+
+  await check('Base da IA: /api/knowledge com 13 condições', async () => {
+    const kb = await api('/api/knowledge', { token });
+    assert(kb.conditions?.length === 13, `${kb.conditions?.length} condições`);
+    assert(kb.conditions.filter((c) => c.category === 'ONCOLOGICA').length === 5, 'esperava 5 cânceres');
+  });
+}
+
 async function main() {
   let backend;
   if (!urlArg) {
@@ -156,6 +239,7 @@ async function main() {
         assert(login.ok, `login respondeu ${login.status}: ${body}`);
         const { accessToken } = JSON.parse(body);
         assert(accessToken, 'login não devolveu accessToken');
+        tokens[user.email] = accessToken;
 
         const dash = await http(`${BASE}${user.dashboard}`, {
           headers: { authorization: `Bearer ${accessToken}` },
@@ -169,6 +253,9 @@ async function main() {
       assert(res.status === 401, `esperava 401, veio ${res.status}`);
     });
 
+    await checkQuickTest();
+    await checkDoctorRisk();
+
     await check('socket.io aceita handshake', async () => {
       const res  = await http(`${BASE}/socket.io/?EIO=4&transport=polling`);
       const body = await res.text();
@@ -177,8 +264,8 @@ async function main() {
 
     const servesFrontend = urlArg || existsSync(join(ROOT, 'frontend', 'dist', 'index.html'));
     if (servesFrontend) {
-      await check('frontend servido (/ e rota do React Router)', async () => {
-        for (const path of ['/', '/doctor/dashboard']) {
+      await check('frontend servido (/, rota do React Router e /teste)', async () => {
+        for (const path of ['/', '/doctor/dashboard', '/teste']) {
           const res = await http(`${BASE}${path}`);
           const html = await res.text();
           assert(res.ok && html.includes('id="root"'), `${path} não devolveu o index.html (${res.status})`);
