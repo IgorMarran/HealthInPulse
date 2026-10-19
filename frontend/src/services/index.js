@@ -110,3 +110,14 @@ export const rewardService = {
   redeem:         (id)     => api.post(`/rewards/${id}/redeem`),
   myRedemptions:  ()       => api.get('/rewards/my/redemptions'),
 };
+
+// ─── Base da IA (/api/knowledge, só médico) ──────────────────
+// Entidades do PATCH: conditions, prior-rules, condition-symptoms,
+// lab-rules, screening-rules. Os ids têm ":" (pr:CA_PULMAO:22), daí o
+// encodeURIComponent. Sem KB_EDIT=true no servidor, PATCH e reset dão 403.
+export const knowledgeService = {
+  get:     ()                    => api.get('/knowledge'),
+  history: (p)                   => api.get('/knowledge/history', { params: p }),
+  patch:   (entity, id, data)    => api.patch(`/knowledge/${entity}/${encodeURIComponent(id)}`, data),
+  reset:   (changeNote)          => api.post('/knowledge/reset', changeNote ? { changeNote } : {}),
+};

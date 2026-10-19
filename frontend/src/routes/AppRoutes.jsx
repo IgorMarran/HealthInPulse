@@ -29,6 +29,7 @@ const DoctorAppointments  = lazy(() => import('@/pages/doctor/Appointments'));
 const DoctorWearable   = lazy(() => import('@/pages/doctor/Wearable'));
 const DoctorReports    = lazy(() => import('@/pages/doctor/Reports'));
 const DoctorHistory    = lazy(() => import('@/pages/doctor/History'));
+const DoctorKnowledge  = lazy(() => import('@/pages/doctor/Knowledge'));
 const DoctorReference  = lazy(() => import('@/pages/doctor/Reference'));
 const DoctorProfile    = lazy(() => import('@/pages/doctor/Profile'));
 
@@ -72,6 +73,7 @@ export default function AppRoutes() {
           <Route path="reports"              element={<DoctorReports />} />
           <Route path="history"              element={<DoctorHistory />} />
           <Route path="appointments"         element={<DoctorAppointments />} />
+          <Route path="knowledge"            element={<DoctorKnowledge />} />
           <Route path="reference"            element={<DoctorReference />} />
           <Route path="profile"              element={<DoctorProfile />} />
         </Route>
