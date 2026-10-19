@@ -27,19 +27,15 @@ const redFlags  = require('./clinical/redFlags');
 const scales    = require('./clinical/scales');
 const questions = require('./clinical/questions');
 const wearable  = require('./clinical/wearableEvidence');
-const { buildFromSeed } = require('./clinical/kb/buildFromSeed');
+const kbRepository = require('./clinical/kb/kbRepository');
 const { ageFromDob, mapGender, computeBmi } = require('./clinical/profile');
 
 // ─── Base de conhecimento + engine ─────────────────────────────────
-// Por ora o kb é montado do JS. A tarefa 3 troca `getKb` por
-// `kbRepository.get()` (banco); o engine é recriado só quando a versão
-// do kb muda (edição na tela "Base da IA").
+// O kb vem do banco (kbRepository, em cache até a base ser editada). O
+// engine é recriado só quando chega outro kb: edição na tela "Base da IA"
+// grava uma KnowledgeVersion nova e invalida o cache do repositório.
 const CHRONIC_PANEL = 'CRONICA';
-let seedKb = null;
-const getKb = async () => {
-  if (!seedKb) seedKb = buildFromSeed();
-  return seedKb;
-};
+const getKb = () => kbRepository.get();
 
 let engineCache = { kb: null, version: null, engine: null };
 const getEngine = async () => {

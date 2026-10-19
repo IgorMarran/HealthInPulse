@@ -312,7 +312,19 @@ User ─┬─ 1:1 ─ Patient ─┬─ 1:n ─ VitalSign
       └─ 1:n ─ RefreshToken
 
 Reward ─ 1:n ─ RewardRedemption
+
+Base de conhecimento do motor clínico (chaves por código, não UUID):
+Condition ─┬─ 1:n ─ PriorRule
+           ├─ 1:n ─ ConditionSymptom ─ n:1 ─ Symptom ─ 1:n ─ LabRule
+           └─ 1:n ─ ScreeningRule
+ClinicalSource ─ 1:n ─ (Condition, PriorRule, ConditionSymptom, LabRule, ScreeningRule)
+KnowledgeVersion   histórico de edições; o maior `version` é a versão do kb
 ```
+
+A base nasce do JS (`services/clinical/kb/buildFromSeed.js`), é gravada por
+`prisma/seedKnowledge.js` e lida pelo motor via `services/clinical/kb/kbRepository.js`
+(em cache até a próxima edição). No start, `ensureSeeded()` cria o que falta
+sem sobrescrever o que a médica editou.
 
 ### Particularidades do SQLite
 
