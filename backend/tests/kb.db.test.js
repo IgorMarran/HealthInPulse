@@ -249,3 +249,114 @@ test('resetToDefaults: volta ao seed, registra no histórico e a versão sobe', 
   // Depois do reset a base volta a ser "como saiu do seed"
   assert.equal((await repo.ensureSeeded()).action, 'none');
 });
+
+// ─── knowledgeService (tela "Base da IA") ───────────────────────────
+const { createKnowledgeService } = require('../src/services/knowledgeService');
+const riskEngine = require('../src/services/clinical/riskEngine');
+
+// Ex-fumante de 67 com hemoptise: o caso que a edição deve mexer
+const HEMOPTISE = {
+  profile: { age: 67, sex: 'male', smoker: true, packYears: 30, quitYears: 5 },
+  answers: { hemoptise: true },
+};
+const lungPosterior = (kb) => riskEngine.assess(kb, HEMOPTISE).oncology.find(c => c.code === 'CA_PULMAO').posterior;
+
+const withKbEdit = async (value, fn) => {
+  const old = process.env.KB_EDIT;
+  if (value == null) delete process.env.KB_EDIT; else process.env.KB_EDIT = value;
+  try { return await fn(); } finally { if (old == null) delete process.env.KB_EDIT; else process.env.KB_EDIT = old; }
+};
+
+test('knowledgeService.patch: transação + histórico + invalidate; versão sobe e o posterior muda', async () => {
+  await freshDb();
+  const repo = createKbRepository(prisma);
+  const svc = createKnowledgeService({ prisma, repo });
+  const before = await repo.get();
+  const pBefore = lungPosterior(before);
+
+  const res = await withKbEdit(null, () => svc.patch('condition-symptoms', 'cs:CA_PULMAO:hemoptise',
+    { pSx: 0.4 }, { changedBy: 'Dra. Teste', note: 'teste' }));
+  // pSx e o lrPos recalculado (pSx/pNoSx), uma linha de histórico cada
+  assert.deepEqual(res.changes.map(c => c.field).sort(), ['lrPos', 'pSx']);
+  assert.equal(res.item.lrPos, Number((0.4 / 0.015).toFixed(2)));
+  assert.equal(res.version, await repo.currentVersion());
+  assert.ok(res.version > 0);
+
+  const after = await repo.get();
+  assert.notEqual(after, before, 'patch deveria invalidar o cache');
+  assert.equal(after.version, res.version);
+  assert.ok(lungPosterior(after) > pBefore, 'sensibilidade maior → posterior maior');
+
+  const h = await svc.history({ limit: 10 });
+  assert.equal(h.total, 2);
+  assert.deepEqual(h.items.find(i => i.field === 'pSx'),
+    { ...h.items.find(i => i.field === 'pSx'), entity: 'ConditionSymptom', entityId: 'cs:CA_PULMAO:hemoptise',
+      oldValue: 0.2, newValue: 0.4, changedBy: 'Dra. Teste', note: 'teste' });
+
+  // mesmo valor de novo: nada muda, versão igual
+  const same = await svc.patch('condition-symptoms', 'cs:CA_PULMAO:hemoptise', { pSx: 0.4 });
+  assert.equal(same.changes.length, 0);
+  assert.equal(same.version, res.version);
+
+  // LR+ direto: deriva 1 − especificidade
+  const lr = await svc.patch('condition-symptoms', 'cs:CA_PULMAO:hemoptise', { lrPos: 20 });
+  assert.equal(lr.item.pNoSx, 0.02);
+});
+
+test('knowledgeService.patch: valida campo, faixa e regras entre campos sem gravar nada', async () => {
+  await freshDb();
+  const repo = createKbRepository(prisma);
+  const svc = createKnowledgeService({ prisma, repo });
+  const rejects = (entity, id, changes, status = 422) =>
+    assert.rejects(svc.patch(entity, id, changes), (e) => e.status === status);
+
+  await rejects('conditions', 'CA_PULMAO', { category: 'CRONICA' });         // fora da lista
+  await rejects('conditions', 'CA_PULMAO', { basePrior: 1.2 });              // prob fora de (0,1)
+  await rejects('conditions', 'CA_PULMAO', { watchThreshold: 0.05 });        // atenção ≥ investigar
+  await rejects('prior-rules', 'pr:CA_PULMAO:22', { amount: 0 });            // multiplicador ≤ 0
+  await rejects('prior-rules', 'pr:CA_PULMAO:1', { amount: 2 });             // set fora de (0,1)
+  await rejects('condition-symptoms', 'cs:CA_PULMAO:hemoptise', { lrPos: 0.1 }); // pNoSx = 2
+  await rejects('condition-symptoms', 'cs:CA_PULMAO:hemoptise', { lrPos: 5, pNoSx: 0.1 });
+  await rejects('screening-rules', 'sr:CA_COLORRETAL:1', { minAge: 90 });    // min > max
+  await rejects('conditions', 'NAO_EXISTE', { basePrior: 0.1 }, 404);
+  await rejects('conditions', 'CA_PULMAO', {});
+  assert.equal(await prisma.knowledgeVersion.count(), 0, 'nada gravado');
+  assert.ok(sameKb(await repo.get(), buildFromSeed()));
+
+  const ok = await svc.patch('prior-rules', 'pr:CA_PULMAO:22', { amount: 4.2, active: true });
+  assert.deepEqual(ok.changes.map(c => c.field), ['amount']);
+});
+
+test('knowledgeService: KB_EDIT=false bloqueia patch e reset (403); leitura continua', async () => {
+  await freshDb();
+  const repo = createKbRepository(prisma);
+  const svc = createKnowledgeService({ prisma, repo });
+  await withKbEdit('false', async () => {
+    await assert.rejects(svc.patch('conditions', 'DPOC', { basePrior: 0.07 }), (e) => e.status === 403);
+    await assert.rejects(svc.reset(), (e) => e.status === 403);
+    const k = await svc.getKnowledge();
+    assert.equal(k.editable, false);
+    assert.equal(k.conditions.length, 13);
+  });
+  assert.equal(await prisma.knowledgeVersion.count(), 0);
+});
+
+test('knowledgeService.reset: volta ao padrão e o posterior volta ao original', async () => {
+  await freshDb();
+  const repo = createKbRepository(prisma);
+  const svc = createKnowledgeService({ prisma, repo });
+  const p0 = lungPosterior(await repo.get());
+  await svc.patch('condition-symptoms', 'cs:CA_PULMAO:hemoptise', { pSx: 0.5 });
+  await svc.patch('conditions', 'CA_PULMAO', { alertThreshold: 0.05 });
+  assert.notEqual(lungPosterior(await repo.get()), p0);
+
+  const { version } = await svc.reset({ changedBy: 'Dra. Teste' });
+  const kb = await repo.get();
+  assert.equal(kb.version, version);
+  assert.ok(sameKb(kb, buildFromSeed()));
+  assert.equal(lungPosterior(kb), p0);
+  const h = await svc.history();
+  assert.equal(h.items[0].entity, 'KB');
+  assert.equal(h.items[0].field, 'reset');
+  assert.equal(h.total, 4); // 2 campos do pSx/lrPos + limiar + reset
+});

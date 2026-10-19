@@ -16,6 +16,7 @@ const { router: aiReportRouter }    = require('./routes/aiReportRoutes');
 const { router: appointmentRouter } = require('./routes/appointmentRoutes');
 const { router: wearableRouter }    = require('./routes/wearableRoutes');
 const { router: publicRouter, guard: publicGuard } = require('./routes/publicRoutes');
+const knowledgeRoutes = require('./routes/knowledgeRoutes');
 const goalRoutes    = require('./routes/goalRoutes');
 const rewardRoutes  = require('./routes/rewardRoutes');
 const errorMiddleware = require('./middlewares/errorMiddleware');
@@ -88,6 +89,7 @@ app.use('/api/wearables',     wearableRouter);
 app.use('/api/goals',         goalRoutes);
 app.use('/api/rewards',       rewardRoutes);
 app.use('/api/public',        publicRouter);
+app.use('/api/knowledge',     knowledgeRoutes);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date() }));
