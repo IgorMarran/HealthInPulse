@@ -25,8 +25,8 @@
 //
 // ─── Operadores usados em `when` / `showIf` ──────────────────────────
 // A lista é um E (todas as cláusulas valem). Operadores:
-//   eq, gt, gte, lt, lte, truthy  — já existem em kb/conditions.js
-//                                    (gt/gte/lt/lte = false com null);
+//   eq, gt, gte, lt, lte, in  — já existem em kb/conditions.js
+//                               (gt/gte/lt/lte = false com null);
 //   includes — NOVO (tarefa 5 implementa): o campo é uma LISTA
 //              (multiselect) e contém `value`. Ex.:
 //              { field: 'familyHistoryCancer', op: 'includes', value: 'mama' }
@@ -40,9 +40,11 @@
 //   papEmDia (boolean: preventivo/DNA-HPV dentro do intervalo)        NOVO
 //   familyHistoryCancer (lista: 'colorretal' | 'mama' | 'ovario' |
 //                        'prostata' | 'pulmao'), parente de 1º grau   NOVO
-// Booleanos chegam como true/false (normalizar 'true'/'1' antes).
-// `smoker: false` (eq false) significa "nunca fumou"; campo ausente
-// não aplica fator nenhum (fica na média da população).
+// smoker e papEmDia usam `in` com [true,'true',1] / [false,'false',0],
+// como o showIf de packYears da v7, então a string 'false' não vira
+// "sim". smoker falso = "nunca fumou"; campo ausente não aplica fator
+// nenhum (fica na média da população). quitYears em branco num fumante
+// deve ser lido como 0 (ainda fuma).
 //
 // ─── LabRule: como ler os achados (tarefa 5 implementa) ──────────────
 // `aliases` casam com ExamResult.findings[].name sem acento e minúsculo.
@@ -80,7 +82,7 @@ const sources = [
   { code: 'JONES_2007', year: 2007,
     citation: 'Jones R, Latinovic R, Charlton J, Gulliford MC. Alarm symptoms in early diagnosis of cancer in primary care: cohort study using General Practice Research Database. BMJ 2007;334:1040.',
     url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC1871798/',
-    note: 'Coorte de 762 mil pacientes. Hemoptise → câncer respiratório em 3 anos (homens): LR 25,3; sensibilidade 22,2%.' },
+    note: 'Coorte de 762 mil pacientes ≥ 15 anos. Hemoptise → câncer respiratório em 3 anos (homens): LR 25,3. Só conferência: não usado no LR porque embute a idade (ver .md).' },
   { code: 'HAASTRUP_2020', year: 2020,
     citation: 'Haastrup PF, Jarbøl DE, Balasubramaniam K, et al. Predictive values of lung cancer alarm symptoms in the general population: a nationwide cohort study. NPJ Prim Care Respir Med 2020;30:15.',
     url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC7138801/',
@@ -111,10 +113,18 @@ const sources = [
     citation: 'WHO. Guideline on haemoglobin cutoffs to define anaemia in individuals and populations. Geneva: WHO, 2024.',
     url: 'https://www.who.int/publications/i/item/9789240088542',
     note: 'Anemia: Hb < 13,0 g/dL (homens) e < 12,0 g/dL (mulheres não gestantes), 15–65 anos.' },
+  { code: 'LEHMAN_2017', year: 2017,
+    citation: 'Lehman CD, Arao RF, Sprague BL, et al. National performance benchmarks for modern screening digital mammography: update from the Breast Cancer Surveillance Consortium. Radiology 2017;283(1):49–58.',
+    url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC5375631/',
+    note: 'Mamografia de rastreamento: detecção 5,1/1.000; sensibilidade 86,9%; especificidade 88,9%; VPP2 (biópsia recomendada, BI-RADS 4–5) 25,6%.' },
+  { code: 'ACR_BIRADS_2013', year: 2013,
+    citation: 'D’Orsi CJ, Sickles EA, Mendelson EB, Morris EA, et al. ACR BI-RADS Atlas: Breast Imaging Reporting and Data System. 5th ed. Reston, VA: American College of Radiology, 2013.',
+    url: 'https://www.acr.org/Clinical-Resources/Clinical-Tools-and-Reference/Reporting-and-Data-Systems/BI-RADS',
+    note: 'Probabilidade de malignidade: BI-RADS 4 > 2% e < 95% (4A 2–10%, 4B 10–50%, 4C 50–95%); BI-RADS 5 ≥ 95%.' },
   { code: 'SPRAGUE_2017', year: 2017,
     citation: 'Sprague BL, Arao RF, Miglioretti DL, et al. National performance benchmarks for modern diagnostic digital mammography: update from the Breast Cancer Surveillance Consortium. Radiology 2017;283(1):59–69.',
     url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC5375630/',
-    note: 'Mamografia diagnóstica: sensibilidade 87,8%; especificidade 90,5%; VPP2 27,5%.' },
+    note: 'Mamografia diagnóstica: sensibilidade 87,8%; especificidade 90,5%; VPP2 27,5%. Só conferência: o LR do BI-RADS usa o rastreamento (Lehman 2017).' },
   { code: 'THOMPSON_PCPT_2005', year: 2005,
     citation: 'Thompson IM, Ankerst DP, Chi C, et al. Operating characteristics of prostate-specific antigen in men with an initial PSA level of 3.0 ng/ml or lower. JAMA 2005;294(1):66–70.',
     url: 'https://doi.org/10.1001/jama.294.1.66',
@@ -204,8 +214,8 @@ const sources = [
     url: 'https://doi.org/10.1053/j.gastro.2017.05.013',
     note: 'Parente de 1º grau com câncer < 60 anos (ou 2 parentes): colonoscopia a cada 5 anos a partir dos 40 ou 10 anos antes do caso mais jovem.' },
   { code: 'MS_MAMA_2025', year: 2025,
-    citation: 'Ministério da Saúde. Ministério da Saúde garante acesso a mamografia a partir dos 40 anos (23/09/2025) e Nota Técnica de 29/09/2025.',
-    url: 'https://www.gov.br/saude/pt-br/assuntos/noticias/2025/setembro/ministerio-da-saude-garante-acesso-a-mamografia-a-partir-dos-40-anos',
+    citation: 'Ministério da Saúde/INCA. Ministério da Saúde padroniza informações para acesso ao exame de mamografia no SUS (29/09/2025), sobre a nota técnica de setembro de 2025.',
+    url: 'https://www.gov.br/inca/pt-br/assuntos/noticias/2025/ministerio-da-saude-padroniza-informacoes-para-acesso-ao-exame-de-mamografia-no-sus',
     note: 'Mudança de 2025: rastreio bienal passou de 50–69 para 50–74; 40–49 sob demanda, com decisão compartilhada.' },
   { code: 'CBR_SBM_FEBRASGO_2023', year: 2023,
     citation: 'Urban LABD, Chala LF, de Paula IB, et al. Recomendações do CBR, da SBM e da Febrasgo para o rastreamento do câncer de mama no Brasil. Radiol Bras 2023;56(4):207–14.',
@@ -284,8 +294,13 @@ const FEMALE = { field: 'sex', op: 'eq', value: 'female' };
 const AGE_GTE = (n) => ({ field: 'age', op: 'gte', value: n });
 const AGE_LT  = (n) => ({ field: 'age', op: 'lt', value: n });
 const FAMILY  = (v) => ({ field: 'familyHistoryCancer', op: 'includes', value: v });
-const SMOKER  = { field: 'smoker', op: 'truthy' };
-const NEVER_SMOKED = { field: 'smoker', op: 'eq', value: false };
+// Mesma leitura do showIf de packYears na v7 (questions.js): só
+// true / 'true' / 1 contam como fumante. Com 'truthy', a string 'false'
+// viraria fumante.
+const SMOKER       = { field: 'smoker', op: 'in', value: [true, 'true', 1] };
+const NEVER_SMOKED = { field: 'smoker', op: 'in', value: [false, 'false', 0] };
+const PAP_ATRASADO = { field: 'papEmDia', op: 'in', value: [false, 'false', 0] };
+const PAP_EM_DIA   = { field: 'papEmDia', op: 'in', value: [true, 'true', 1] };
 const range = (field, lo, hi) => [
   ...(lo != null ? [{ field, op: 'gte', value: lo }] : []),
   ...(hi != null ? [{ field, op: 'lt', value: hi }] : []),
@@ -342,20 +357,20 @@ const riskFactorRules = [
   factor('CA_PULMAO', 'Parente de 1º grau com câncer de pulmão', [FAMILY('pulmao')], 1.5, false, 'MATAKIDOU_2005'),
 
   // ── Mama
-  factor('CA_MAMA', 'Mãe, irmã ou filha com câncer de mama (até 49 anos)', [FAMILY('mama'), AGE_LT(50)], 2.2, false, 'COLLAB_FAMILIAL_2001'),
-  factor('CA_MAMA', 'Mãe, irmã ou filha com câncer de mama (50 anos ou mais)', [FAMILY('mama'), AGE_GTE(50)], 1.7, false, 'COLLAB_FAMILIAL_2001'),
+  factor('CA_MAMA', 'Mãe, irmã ou filha com câncer de mama (você com menos de 50 anos)', [FAMILY('mama'), AGE_LT(50)], 2.2, false, 'COLLAB_FAMILIAL_2001'),
+  factor('CA_MAMA', 'Mãe, irmã ou filha com câncer de mama (você com 50 anos ou mais)', [FAMILY('mama'), AGE_GTE(50)], 1.7, false, 'COLLAB_FAMILIAL_2001'),
   factor('CA_MAMA', 'Parente de 1º grau com câncer de ovário', [FAMILY('ovario')], 1.3, false, 'CLAUS_1993'),
   factor('CA_MAMA', 'Álcool: 8 a 14 doses por semana', range('alcoholDosesWeek', 8, 15), 1.15, true, 'HAMAJIMA_2002'),
   factor('CA_MAMA', 'Álcool: 15 doses ou mais por semana', range('alcoholDosesWeek', 15, null), 1.3, true, 'HAMAJIMA_2002'),
   factor('CA_MAMA', 'Obesidade (IMC ≥ 30) após os 50 anos', [{ field: 'bmi', op: 'gte', value: 30 }, AGE_GTE(50)], 1.15, true, 'RENEHAN_2008'),
 
   // ── Próstata
-  factor('CA_PROSTATA', 'Pai ou irmão com câncer de próstata (até 64 anos)', [FAMILY('prostata'), AGE_LT(65)], 2.87, false, 'KICINSKI_2011'),
-  factor('CA_PROSTATA', 'Pai ou irmão com câncer de próstata (65 anos ou mais)', [FAMILY('prostata'), AGE_GTE(65)], 1.92, false, 'KICINSKI_2011'),
+  factor('CA_PROSTATA', 'Pai ou irmão com câncer de próstata (você com menos de 65 anos)', [FAMILY('prostata'), AGE_LT(65)], 2.87, false, 'KICINSKI_2011'),
+  factor('CA_PROSTATA', 'Pai ou irmão com câncer de próstata (você com 65 anos ou mais)', [FAMILY('prostata'), AGE_GTE(65)], 1.92, false, 'KICINSKI_2011'),
 
   // ── Colo do útero (relativo à média: 81% das brasileiras estão em dia)
-  factor('CA_COLO_UTERO', 'Preventivo / teste de HPV atrasado', [{ field: 'papEmDia', op: 'eq', value: false }], 1.96, true, 'ANDRAE_2008'),
-  factor('CA_COLO_UTERO', 'Preventivo / teste de HPV em dia', [{ field: 'papEmDia', op: 'eq', value: true }], 0.78, true, 'ANDRAE_2008'),
+  factor('CA_COLO_UTERO', 'Preventivo / teste de HPV atrasado', [PAP_ATRASADO], 1.96, true, 'ANDRAE_2008'),
+  factor('CA_COLO_UTERO', 'Preventivo / teste de HPV em dia', [PAP_EM_DIA], 0.78, true, 'ANDRAE_2008'),
   factor('CA_COLO_UTERO', 'Fuma atualmente', [SMOKER, { field: 'quitYears', op: 'lt', value: 1 }], 1.6, true, 'IARC_COLO_TABACO_2006'),
   factor('CA_COLO_UTERO', 'Ex-fumante', [SMOKER, { field: 'quitYears', op: 'gte', value: 1 }], 1.12, true, 'IARC_COLO_TABACO_2006'),
 ];
@@ -436,9 +451,9 @@ const symptoms = [
     null, 2, [FEMALE, AGE_GTE(25)], ONCO, 223),
 
   // ── Próstata (homem 40+)
-  question('sintomas_urinarios_baixos', 'Mudança no jeito de urinar',
-    'Tem urinado mais vezes do que antes (inclusive à noite), ou com jato fraco ou dificuldade para começar?',
-    'Esses sinais são muito comuns com o aumento benigno da próstata; servem para conversar com o médico.',
+  question('sintomas_urinarios_baixos', 'Urinando mais vezes (inclusive à noite)',
+    'Nos últimos meses, você passou a urinar mais vezes do que antes, inclusive tendo que levantar à noite para urinar?',
+    'É muito comum com o aumento benigno da próstata. Se sim, vale conversar com o médico sobre o PSA.',
     2, [MALE, AGE_GTE(40)], ONCO_RAPIDO, 231),
   question('hematuria_visivel', 'Sangue na urina',
     'Nos últimos meses, você viu sangue na urina?',
@@ -485,7 +500,7 @@ const conditionSymptoms = [
   cs('CA_COLORRETAL', 'anemia_hb_baixa', 0.272, 0.052, 'HAMILTON_CCR_2005', 'Hb < 13 g/dL somando as faixas do CAPER: 95/349 casos vs 90/1.744 controles; LR 5,3 (Hb < 10 sozinha: LR 9,5).'),
 
   // ── Pulmão
-  cs('CA_PULMAO', 'hemoptise', 0.222, 0.0088, 'JONES_2007', 'Coorte GPRD, homens: sensibilidade 22,2%, LR 25,3 → 1−esp = 0,222/25,3. CAPER (caso-controle) dá LR 13.'),
+  cs('CA_PULMAO', 'hemoptise', 0.20, 0.015, 'HAMILTON_CAPER_2009', 'CAPER pulmão (controles ≥ 40 anos pareados por idade): 20% dos casos vs 1,5% dos controles; LR 13. O LR 25,3 de Jones 2007 (coorte ≥ 15 anos, 3 anos) não foi usado: mistura idade no LR e contaria a idade duas vezes.'),
   cs('CA_PULMAO', 'tosse_persistente_3sem', 0.146, 0.091, 'HAASTRUP_2020', 'População geral, tosse > 4 semanas: 6/41 casos, LR+ 1,6 → 1−esp = 0,146/1,6.'),
   cs('CA_PULMAO', 'dispneia_persistente', 0.171, 0.081, 'HAASTRUP_2020', 'Dispneia: 7/41 casos, LR+ 2,1.'),
   cs('CA_PULMAO', 'rouquidao', 0.098, 0.038, 'HAASTRUP_2020', 'Rouquidão > 4 semanas: 4/41 casos, LR+ 2,6 (IC 1,0–6,6).'),
@@ -496,10 +511,10 @@ const conditionSymptoms = [
   cs('CA_MAMA', 'nodulo_mama', 0.441, 0.008, 'WALKER_2014', '1.762/3.994 casos vs 132/16.873 controles; LR 55. VPP 4,8% (40–49) a 48% (>70).'),
   cs('CA_MAMA', 'alteracao_mamilo', 0.0203, 0.00142, 'WALKER_2014', 'Retração ou secreção: 81/3.994 casos vs 24/16.873 controles; LR 14.'),
   cs('CA_MAMA', 'alteracao_pele_mama', 0.001, 0.00007, 'WALKER_2014', '3 casos e 0 controles (não estimável); adotado o LR do mamilo (14) como piso conservador. Confiança C.'),
-  cs('CA_MAMA', 'birads_4_5', 0.878, 0.095, 'SPRAGUE_2017', 'Mamografia diagnóstica: sens 87,8%, esp 90,5% → LR 9,2.'),
+  cs('CA_MAMA', 'birads_4_5', 0.869, 0.013, 'LEHMAN_2017', 'Rastreamento (BCSC, 1,7 milhão de exames): VPP2 25,6% sobre prior de 0,51% (detecção 5,1/1.000) → LR = odds(0,256)/odds(0,0051) ≈ 67; pSx = sensibilidade 86,9%, pNoSx = 0,869/67. Coerente com o ACR BI-RADS 2013 (categoria 4 > 2%, 5 ≥ 95%).'),
 
   // ── Próstata
-  cs('CA_PROSTATA', 'sintomas_urinarios_baixos', 0.47, 0.071, 'HAMILTON_PROSTATA_2006', 'Polaciúria: 102/217 vs 77/1.080; LR 6,6. Parte do LR vem de PSA pedido por causa do sintoma (viés de detecção).'),
+  cs('CA_PROSTATA', 'sintomas_urinarios_baixos', 0.47, 0.071, 'HAMILTON_PROSTATA_2006', 'Polaciúria (frequência): 102/217 vs 77/1.080; LR 6,6 (noctúria sozinha: 63/217 vs 49/1.080, LR 6,4). Parte do LR vem de PSA pedido por causa do sintoma (viés de detecção).'),
   cs('CA_PROSTATA', 'hematuria_visivel', 0.152, 0.05, 'HAMILTON_PROSTATA_2006', '33/217 vs 54/1.080; LR 3,0.'),
   cs('CA_PROSTATA', 'psa_acima_idade', 0.205, 0.062, 'THOMPSON_PCPT_2005', 'PSA > 4,0 no PCPT: sens 20,5%, esp 93,8% → LR 3,3 (corte fixo; aplicado ao limite por idade).'),
 
@@ -527,7 +542,7 @@ const labRules = [
   lab('HB_BAIXA_MULHER', 'Hemoglobina < 12 g/dL (mulher)', HB_ALIASES, 'lt', 12, 'g/dL', 'female', null, null, 'anemia_hb_baixa', 180, 3, 'WHO_HB_2024'),
   lab('BIRADS_4_5', 'Mamografia BI-RADS 4 ou 5',
     ['bi-rads', 'birads', 'bi rads', 'categoria bi-rads', 'mamografia bi-rads', 'mamografia'],
-    'gte', 4, null, 'female', null, null, 'birads_4_5', 365, 4, 'SPRAGUE_2017'),
+    'gte', 4, null, 'female', null, null, 'birads_4_5', 365, 4, 'ACR_BIRADS_2013'),
   lab('PSA_40_49', 'PSA > 2,5 ng/mL (40–49 anos)', PSA_ALIASES, 'gt', 2.5, 'ng/mL', 'male', 40, 49, 'psa_acima_idade', 365, 5, 'OESTERLING_1993'),
   lab('PSA_50_59', 'PSA > 3,5 ng/mL (50–59 anos)', PSA_ALIASES, 'gt', 3.5, 'ng/mL', 'male', 50, 59, 'psa_acima_idade', 365, 6, 'OESTERLING_1993'),
   lab('PSA_60_69', 'PSA > 4,5 ng/mL (60–69 anos)', PSA_ALIASES, 'gt', 4.5, 'ng/mL', 'male', 60, 69, 'psa_acima_idade', 365, 7, 'OESTERLING_1993'),
@@ -550,7 +565,7 @@ const screen = (conditionCode, priority, kind, exam, sexFilter, minAge, maxAge, 
 const screeningRules = [
   // ── Colorretal
   screen('CA_COLORRETAL', 1, 'ALTO_RISCO', 'Colonoscopia', null, 40, 75, [FAMILY('colorretal')], 60,
-    'Com parente de 1º grau com câncer colorretal, a colonoscopia costuma começar aos 40 anos (ou 10 anos antes da idade em que o parente teve o diagnóstico) e se repetir a cada 5 anos. Converse com seu médico.',
+    'Se o seu parente de 1º grau teve câncer colorretal antes dos 60 anos, ou se dois ou mais parentes de 1º grau tiveram, a colonoscopia costuma começar aos 40 anos (ou 10 anos antes da idade do diagnóstico do parente mais jovem) e se repetir a cada 5 anos. Em outros casos de família, converse com o médico sobre quando começar.',
     'USMSTF_2017'),
   screen('CA_COLORRETAL', 2, 'POPULACIONAL', 'Teste de sangue oculto nas fezes (FIT)', null, 50, 75, [], 24,
     'De 50 a 75 anos, sem sintomas: teste imunoquímico de sangue oculto nas fezes (FIT) a cada 2 anos, no SUS desde 2026. Se der positivo, o próximo passo é a colonoscopia.',
@@ -561,8 +576,8 @@ const screeningRules = [
 
   // ── Pulmão
   screen('CA_PULMAO', 1, 'ALTO_RISCO', 'Tomografia de tórax de baixa dose', null, 50, 80,
-    [SMOKER, { field: 'packYears', op: 'gte', value: 20 }, { field: 'quitYears', op: 'lte', value: 15 }], 12,
-    'Fumantes ou ex-fumantes (parou há até 15 anos) com 20 maços-ano ou mais, de 50 a 80 anos: tomografia de baixa dose anual, segundo o consenso das sociedades brasileiras (2024). Ainda não é programa do SUS; converse com seu médico. Parar de fumar é a medida que mais reduz o risco.',
+    [SMOKER, { field: 'packYears', op: 'gte', value: 20 }, { field: 'quitYears', op: 'lt', value: 15 }], 12,
+    'Fumantes ou ex-fumantes (parou há menos de 15 anos) com 20 maços-ano ou mais, de 50 a 80 anos: tomografia de baixa dose anual, segundo o consenso das sociedades brasileiras (2024). Ainda não é programa do SUS; converse com seu médico. Parar de fumar é a medida que mais reduz o risco.',
     'CONSENSO_PULMAO_BR_2024'),
 
   // ── Mama
@@ -581,14 +596,14 @@ const screeningRules = [
 
   // ── Próstata
   screen('CA_PROSTATA', 1, 'DECISAO_COMPARTILHADA', 'PSA (e toque retal)', 'male', 45, 75, [FAMILY('prostata')], 12,
-    'Com pai ou irmão com câncer de próstata, a Sociedade Brasileira de Urologia sugere conversar sobre o PSA a partir dos 45 anos. A decisão é sua junto com o médico.',
+    'Com pai ou irmão com câncer de próstata, a Sociedade Brasileira de Urologia sugere conversar com o médico sobre o PSA a partir dos 45 anos. Se você urina mais vezes do que antes, converse com o médico sobre o PSA mesmo antes disso. A decisão é sua junto com o médico.',
     'SBU_PROSTATA'),
   screen('CA_PROSTATA', 2, 'DECISAO_COMPARTILHADA', 'PSA (e toque retal)', 'male', 50, 75, [], 12,
-    'O Ministério da Saúde e o INCA não recomendam o PSA para todos os homens sem sintomas, porque ele também acha tumores que nunca causariam problema. A SBU sugere uma conversa individual a partir dos 50 anos.',
+    'O Ministério da Saúde e o INCA não recomendam o PSA para todos os homens sem sintomas, porque ele também acha tumores que nunca causariam problema. A SBU sugere uma conversa individual a partir dos 50 anos. Se você passou a urinar mais vezes (inclusive à noite), converse com o médico sobre o PSA.',
     'MS_PROSTATA_NT9_2023'),
 
   // ── Colo do útero
-  screen('CA_COLO_UTERO', 1, 'POPULACIONAL', 'Teste de DNA-HPV (ou preventivo)', 'female', 25, 64, [{ field: 'papEmDia', op: 'eq', value: false }], 60,
+  screen('CA_COLO_UTERO', 1, 'POPULACIONAL', 'Teste de DNA-HPV (ou preventivo)', 'female', 25, 64, [PAP_ATRASADO], 60,
     'Seu exame está atrasado. Procure a unidade de saúde: o teste de DNA-HPV (ou o preventivo, onde o teste ainda não chegou) é gratuito no SUS.',
     'MS_COLO_HPV_2025'),
   screen('CA_COLO_UTERO', 2, 'POPULACIONAL', 'Teste de DNA-HPV (ou preventivo)', 'female', 25, 64, [], 60,

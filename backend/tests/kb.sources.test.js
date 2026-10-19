@@ -141,6 +141,21 @@ test('sintomas: códigos únicos, sem perfil, sem colidir com a fase crônica', 
   }
 });
 
+test("booleanos do perfil (smoker, papEmDia) não tratam a string 'false' como sim", () => {
+  const clauses = [
+    ...onco.priorRules.flatMap(r => r.when ?? []),
+    ...onco.screeningRules.flatMap(r => r.when ?? []),
+    ...onco.symptoms.flatMap(s => s.showIf ?? []),
+    ...onco.profileFields.flatMap(f => f.showIf ?? []),
+  ].filter(c => c.field === 'smoker' || c.field === 'papEmDia');
+  assert.ok(clauses.length > 0);
+  for (const c of clauses) {
+    assert.equal(c.op, 'in', `${c.field}: use "in" como o showIf de packYears da v7 (não ${c.op})`);
+    const yes = c.value.includes(true);
+    assert.deepEqual(c.value, yes ? [true, 'true', 1] : [false, 'false', 0], `${c.field}: valores`);
+  }
+});
+
 test('teste rápido tem no máximo 8 perguntas', () => {
   const rapido = onco.symptoms.filter(s => s.panels.includes('RAPIDO'));
   assert.ok(rapido.length > 0 && rapido.length <= 8, `RAPIDO com ${rapido.length}`);

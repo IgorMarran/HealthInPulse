@@ -82,7 +82,7 @@ Faixas de 80 anos ou mais juntam 80–84 e 85+, ponderadas pela população. As 
 | CCR: perda de peso na balança | 0,269 / 0,053 (5,08) | idem | HAMILTON_CCR_2005 | Mesmo LR; regra da balança: queda ≥ 5% em até 180 dias | B |
 | CCR: FIT positivo | 0,79 / 0,06 (13,17) | 19 estudos, assintomáticos | LEE_FIT_2014 | sens 0,79; esp 0,94 | A |
 | CCR: anemia (Hb < 13 H / < 12 M) | 0,272 / 0,052 (5,23) | CAPER | HAMILTON_CCR_2005, WHO_HB_2024 | Soma das faixas Hb < 13 g/dL: 95/349 vs 90/1.744. Corte por sexo da OMS 2024 | B |
-| Pulmão: hemoptise | 0,222 / 0,0088 (25,23) | coorte GPRD, 762 mil pessoas | JONES_2007 | sens 22,2%; LR 25,3 (homens, 3 anos) → pNoSx = 0,222/25,3. O CAPER (caso-controle) dá LR 13 | A |
+| Pulmão: hemoptise | 0,20 / 0,015 (13,33) | CAPER pulmão, ≥ 40 anos, controles pareados por idade | HAMILTON_CAPER_2009 | 20% dos casos vs 1,5% dos controles; LR 13 (VPP 2,4% sobre prior de 0,18%). O LR 25,3 de Jones 2007 **não** foi usado: vem de uma coorte a partir dos 15 anos, com janela de 3 anos, e por isso já embute a idade no LR. Como a idade já entra no prior, a idade contaria duas vezes | B |
 | Pulmão: tosse > 3 semanas | 0,146 / 0,091 (1,6) | população geral ≥ 40 | HAASTRUP_2020 | Tosse > 4 semanas: 6/41 casos; LR+ 1,6 | C |
 | Pulmão: falta de ar nova | 0,171 / 0,081 (2,11) | idem | HAASTRUP_2020 | 7/41 casos; LR+ 2,1 | C |
 | Pulmão: rouquidão persistente | 0,098 / 0,038 (2,58) | idem | HAASTRUP_2020 | 4/41 casos; LR+ 2,6 (IC 1,0–6,6) | C |
@@ -90,8 +90,8 @@ Faixas de 80 anos ou mais juntam 80–84 e 85+, ponderadas pela população. As 
 | Mama: nódulo | 0,441 / 0,008 (55,13) | CPRD, ≥ 40 anos | WALKER_2014 | 1.762/3.994 vs 132/16.873 | A |
 | Mama: alteração no mamilo | 0,0203 / 0,00142 (14,3) | idem | WALKER_2014 | Retração + secreção: 81/3.994 vs 24/16.873 | B |
 | Mama: alteração na pele | 0,001 / 0,00007 (14,29) | idem | WALKER_2014 | 3 casos e 0 controles: LR não estimável (Haldane daria ~30, com IC enorme). Adotado o LR do mamilo como piso | C |
-| Mama: BI-RADS 4–5 | 0,878 / 0,095 (9,24) | BCSC, 401 mil mamografias diagnósticas | SPRAGUE_2017 | sens 87,8%; esp 90,5% | A |
-| Próstata: sintomas urinários | 0,47 / 0,071 (6,62) | CAPER próstata | HAMILTON_PROSTATA_2006 | Polaciúria: 102/217 vs 77/1.080. Parte do LR vem de PSA pedido por causa do sintoma (viés de detecção) | B |
+| Mama: BI-RADS 4–5 | 0,869 / 0,013 (66,85) | BCSC, 1,7 milhão de mamografias de rastreamento | LEHMAN_2017, ACR_BIRADS_2013 | LR = odds(VPP2 25,6%) / odds(prior 0,51%, detecção 5,1/1.000) = 0,344/0,00513 ≈ 67; pSx = sensibilidade 86,9%, pNoSx = 0,869/67. O ACR BI-RADS 2013 define a categoria 4 como > 2% e a 5 como ≥ 95% de malignidade. A versão anterior usava a mamografia diagnóstica (Sprague 2017, LR 9,2), cujo prior (3,5%) não é o da população | B |
+| Próstata: urinar mais vezes (inclusive à noite) | 0,47 / 0,071 (6,62) | CAPER próstata | HAMILTON_PROSTATA_2006 | Polaciúria (frequência): 102/217 vs 77/1.080. Noctúria sozinha dá LR 6,4 (63/217 vs 49/1.080); o estudo não publica as duas juntas, então fica o LR da frequência. A pergunta ficou restrita a frequência/noctúria, que é o que o CAPER mediu (jato fraco não foi medido). Parte do LR vem de PSA pedido por causa do sintoma (viés de detecção) | B |
 | Próstata: sangue na urina | 0,152 / 0,05 (3,04) | idem | HAMILTON_PROSTATA_2006 | 33/217 vs 54/1.080 | B |
 | Próstata: PSA acima do limite da idade | 0,205 / 0,062 (3,31) | PCPT, biópsia em todos | THOMPSON_PCPT_2005, OESTERLING_1993 | Corte 4,0 ng/mL: sens 20,5%, esp 93,8%. Aplicado ao limite por idade de Oesterling (2,5/3,5/4,5/6,5) | B |
 | Colo: sangramento pós-coito | 0,11 / 0,05 (2,2) | revisão sistemática | SHAPLEY_2006 | 11% dos casos têm o sintoma; incidência anual na comunidade 3,4–7,2% entre 25 e 54 anos (~5%) | C |
@@ -107,7 +107,7 @@ Sintomas **compartilhados** com a fase crônica: `perda_peso_inexplicada` e `rou
 |---|---|---|
 | FIT positivo | resultado "positivo" (validade 365 dias) | LEE_FIT_2014 |
 | Anemia | Hb < 13,0 g/dL (H) · < 12,0 g/dL (M), validade 180 dias | WHO_HB_2024 |
-| BI-RADS | ≥ 4 (4A/4B/4C contam como 4) | SPRAGUE_2017 |
+| BI-RADS | ≥ 4 (4A/4B/4C contam como 4) | ACR_BIRADS_2013, LEHMAN_2017 |
 | PSA | > 2,5 (40–49) · > 3,5 (50–59) · > 4,5 (60–69) · > 6,5 (≥ 70) ng/mL | OESTERLING_1993 |
 | Papanicolau | "alterado" (ASC-US ou pior), validade 3 anos | KOLIOPOULOS_2017 |
 | DNA-HPV | "detectado/positivo", validade 5 anos | KOLIOPOULOS_2017 |
@@ -121,7 +121,7 @@ Todas emitem evidência negativa quando o exame vem normal (`emitNegative: true`
 | Colorretal | **50–75 anos, FIT a cada 2 anos** no SUS, para quem não tem sintomas; positivo → colonoscopia | POPULACIONAL | INCA, 10/08/2026 | **Sim (2026).** Antes não havia rastreamento colorretal organizado no SUS |
 | Colorretal | 45–49: sociedades recomendam começar (USPSTF 2021; SBCP) | DECISÃO COMPARTILHADA | USPSTF 2021 | Não |
 | Colorretal | Parente de 1º grau: colonoscopia a cada 5 anos a partir dos 40 (ou 10 anos antes do caso mais jovem) | ALTO RISCO | USMSTF 2017 | Não |
-| Pulmão | 50–80 anos, fumante ou ex-fumante há ≤ 15 anos, ≥ 20 maços-ano: TC de baixa dose anual | ALTO RISCO | Consenso SBCT/SBPT/CBR, J Bras Pneumol 2024 | **Sim (2024)**, primeira recomendação brasileira. **Não** é programa do SUS; o INCA estuda a implantação |
+| Pulmão | 50–80 anos, fumante ou ex-fumante que parou há menos de 15 anos (`quitYears < 15`), ≥ 20 maços-ano: TC de baixa dose anual | ALTO RISCO | Consenso SBCT/SBPT/CBR, J Bras Pneumol 2024 | **Sim (2024)**, primeira recomendação brasileira. **Não** é programa do SUS; o INCA estuda a implantação |
 | Mama | 50–74 anos: mamografia a cada 2 anos | POPULACIONAL | MS, set/2025 | **Sim (2025):** a faixa era 50–69 |
 | Mama | 40–49 anos: mamografia sob demanda no SUS, com decisão compartilhada; SBM/CBR/Febrasgo recomendam anual de 40 a 74 | DECISÃO COMPARTILHADA | MS 2025; CBR/SBM/Febrasgo 2023 | **Sim (2025):** antes o MS não oferecia aos 40–49 |
 | Mama | Risco ≥ 20% na vida (ex.: mãe ou irmã com câncer jovem): mamografia e RM anuais a partir de 10 anos antes do caso mais jovem, não antes dos 30. Ovário na família: aconselhamento genético | ALTO RISCO | CBR/SBM/Febrasgo 2023 | Atualização de 2023 |
@@ -131,7 +131,8 @@ Todas emitem evidência negativa quando o exame vem normal (`emitNegative: true`
 
 Diferenças em relação ao rascunho do plano:
 - **Colorretal:** o plano dizia 45–75 com FIT ou colonoscopia. O programa oficial (2026) é **50–75 com FIT bienal**. Os 45–49 ficaram como decisão compartilhada.
-- **Pulmão:** o consenso brasileiro fala em "mais de 20 maços-ano". A regra usa ≥ 20, como o USPSTF 2021.
+- **Pulmão:** o consenso brasileiro fala em "mais de 20 maços-ano". A regra usa ≥ 20, como o USPSTF 2021. Para o tempo sem fumar, a regra usa `quitYears < 15`, igual ao consenso ("parou há menos de 15 anos"; para quem passou de 15 anos sem fumar, o rastreamento para).
+- **Colorretal, alto risco:** a colonoscopia a partir dos 40 vale para parente de 1º grau diagnosticado antes dos 60 anos, ou para 2 ou mais parentes. O perfil não guarda a idade do parente, então o texto explica a condição e manda conversar com o médico nos outros casos.
 
 ## Personas (conferência com naive Bayes)
 
@@ -142,14 +143,19 @@ Calculado com os dados deste arquivo: `logit(prior) + Σ ln LR`.
 | Roberto, 63, H, ex-fumante de 35 maços-ano, parou há 8 anos; mudança do hábito intestinal, Hb 10,9, FIT+, perda de 9,5% do peso na balança | **Colorretal 68% → INVESTIGAR** (prior 0,157%). Com "não" para sangue nas fezes e dor: 45%. Pulmão: prior × 2,24, posterior 1,6% → ATENÇÃO. TC de baixa dose indicada |
 | Marina, 38, M, mãe com câncer de mama aos 41, preventivo atrasado | **Mama RR 2,2 → ATENÇÃO** (0,23%). Colo RR 1,96 → ROTINA, com DNA-HPV indicado. Rastreamento de alto risco: mamografia anual a partir dos 31 (41 − 10), se a médica confirmar risco ≥ 20% |
 | Mulher de 22 sem nada | Nenhum câncer elegível (idade mínima 25) → **tudo ROTINA** |
-| Homem de 67 com hemoptise, fumo não informado | **Pulmão 4,4% → INVESTIGAR**. Com "não" nas outras perguntas do teste rápido: 3,2%, ainda INVESTIGAR |
-| Mesmo homem, nunca fumou | Pulmão 0,9%, RR 4,9 → ATENÇÃO |
-| Mesmo homem, fumante de 30 maços-ano | Pulmão 11% → INVESTIGAR |
+| Homem de 67 com hemoptise, fumo não informado | Pulmão 2,4% → **ATENÇÃO** (RR 13). Com "não" nas outras perguntas do teste rápido: 1,7%, ATENÇÃO |
+| Mesmo homem, ex-fumante de 30 maços-ano que parou há 5 anos | Pulmão 5,2% → **INVESTIGAR**. Com "não" nas outras perguntas do teste rápido: 3,8%, INVESTIGAR. Se parou há 10 anos: 3,5% |
+| Mesmo homem, nunca fumou (outras perguntas "não") | Pulmão 0,47%, RR 2,6 → ATENÇÃO |
+| Mesmo homem, fumante atual de 30 maços-ano (outras perguntas "não") | Pulmão 6,3% → INVESTIGAR |
+| Mulher com BI-RADS 4–5, sem outros dados | 25 anos: 1,9% (ATENÇÃO) · 35: 6,5% · **42: 9,3% · 47: 12,4% · 52: 15,2% · 55: 17,6%** · 65: 21% → INVESTIGAR a partir dos 30–34 anos (prior 0,060% × 67 ≈ 3,9%) |
+| Homem que passou a urinar mais vezes, sem outros dados | 45: 0,06% · 52: 0,82% · 57: 2,0% (ATENÇÃO) · **62: 3,7% · 67: 5,5% · 72: 6,9% · 77: 7,6% → INVESTIGAR a partir dos 60 anos** |
 
 ## Limitações (para o FAQ da banca)
 
 - **Naive Bayes supõe achados independentes.** FIT+ e anemia, ou tosse e hemoptise, andam juntos, então somar os LRs superestima o risco. Por isso a tela mostra "≥ 20%" acima de 20%.
 - **LRs de estudos ingleses (CAPER, CPRD, GPRD)** são de atenção primária. Aplicados a visitante de feira, o "sim" tende a pesar um pouco mais do que deveria.
 - **HPV e Papanicolau** foram validados para CIN2+, não só para câncer invasivo.
-- **Próstata:** a incidência brasileira inclui tumores achados por PSA que nunca dariam sintoma. Por isso homens mais velhos com sintoma urinário chegam perto do limiar.
+- **Próstata:** um homem que passou a urinar mais vezes (LR 6,6) passa de 3% **a partir dos 60 anos**: 50–54 dá 0,82%, 55–59 dá 2,0% (ATENÇÃO), 60–64 dá 3,7%, 65–69 dá 5,5%, 70–74 dá 6,9% e 75–79 dá 7,6% (INVESTIGAR). A recomendação para esse caso é **conversar com o médico sobre o PSA**, não "câncer provável". É coerente com o NICE NG12, que manda considerar o PSA em homem com sintoma urinário.
+- **Viés de detecção (para o FAQ):** o PSA acha tumores que nunca dariam sintoma. Isso infla a incidência brasileira de próstata (o prior) e também o LR do sintoma urinário, porque o homem com sintoma faz mais PSA e por isso recebe mais diagnósticos. Os dois efeitos empurram o risco de próstata para cima.
+- **Perda de peso contada duas vezes:** a perda de peso relatada (`perda_peso_inexplicada`) e a medida na balança (`perda_peso_objetiva`) têm LR para colorretal e pulmão. Na fase oncológica, o motor (tarefa 5) usa só a medida quando ela existe, e a relatada é ignorada para não somar o mesmo achado duas vezes.
 - **Valores C** (tosse, dispneia, rouquidão, pele da mama, sangramentos do colo, fator "nunca fumou") devem ser revistos pela médica na tela "Base da IA".
