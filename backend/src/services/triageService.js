@@ -460,12 +460,23 @@ const finalizeWithRedFlag = async (triage, state, patientId) => {
     { type: 'info',    text: `Sinal detectado: ${rf.label}` },
   ];
 
+  // O red flag manda (nível CRITICAL/HIGH, ação imediata), mas o risco
+  // oncológico com o que já foi respondido continua no resultado: a médica
+  // vê o câncer em INVESTIGAR e é avisada, em qualquer fase.
+  let oncology = null;
+  if (ONCO_PHASE_ENABLED && isProfileComplete(state.profile)) {
+    try { oncology = await assessOncology(patientId, state); }
+    catch (e) { console.error('Erro no risco oncológico:', e.message); }
+  }
+  const investigate = (oncology?.conditions ?? []).filter(c => c.level === riskEngine.LEVEL.INVESTIGAR);
+
   state.result = {
     riskLevel: level,
     score:     99,
     redFlag:   rf,
     summary,
     suggestions,
+    oncology,
   };
 
   await saveState(triage.id, state, {
@@ -486,7 +497,9 @@ const finalizeWithRedFlag = async (triage, state, patientId) => {
     },
   });
 
-  await emitCompleted(patientId, triage.id, level, report.id, true);
+  if (investigate.length) await notifyDoctors(patientId, triage.id, investigate);
+  await emitCompleted(patientId, triage.id, level, report.id, true,
+    investigate.length ? { oncology: investigate.map(c => c.code) } : {});
 };
 
 // ─── Construção da resposta para o frontend ────────────────────────
@@ -716,6 +729,7 @@ const getTriageById = async (triageId, patientId) => {
 module.exports = {
   ONCO_PHASE_ENABLED,
   emitCompleted, // exportado para o teste do escopo do alerta
+  advance,       // exportado para o teste da máquina de estados
   getQuestions,
   startTriage,
   answerTriage,

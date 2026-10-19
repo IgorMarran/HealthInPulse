@@ -41,6 +41,12 @@ test('pulmão: 50–80, ≥ 20 maços-ano, parou há menos de 15 anos (consenso 
   assert.equal(future.startAge, 50);
 });
 
+test('evaluate normaliza o perfil sozinho (chamada direta, sem quitYears)', () => {
+  const direct = screening.evaluate(KB, { age: 60, sex: 'M', smoker: true, packYears: 30 });
+  assert.equal(direct.find(s => s.conditionCode === 'CA_PULMAO')?.status, 'INDICADO_AGORA');
+  assert.deepEqual(screening.evaluate(KB, normalizeProfile({ age: 60, sex: 'male', smoker: true, packYears: 30 })), direct);
+});
+
 test('mama: 50–74 no SUS (2025); 40–49 decisão compartilhada; família antecipa; nada para homem', () => {
   assert.equal(ev({ age: 60, sex: 'female' }).CA_MAMA.status, 'INDICADO_AGORA');
   assert.equal(ev({ age: 60, sex: 'female' }).CA_MAMA.kind, 'POPULACIONAL');

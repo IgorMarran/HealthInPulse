@@ -9,9 +9,12 @@
 // Câncer sem regra hoje nem no futuro (ex.: pulmão para quem nunca fumou,
 // colo do útero depois dos 64) não aparece.
 //
-// Puro: recebe o kb e o perfil (já normalizado, ver profile.normalizeProfile).
+// Puro: recebe o kb e o perfil cru ou normalizado (normalizeProfile roda
+// aqui e é idempotente: { smoker: true, packYears: 30 } sem quitYears
+// vale como fumante atual e entra no rastreio de pulmão).
 
 const { evalWhen } = require('./kb/conditions');
+const { normalizeProfile } = require('./profile');
 
 const STATUS = {
   NOW:    'INDICADO_AGORA',
@@ -48,7 +51,8 @@ const entry = (cond, rule, status, extra = {}) => ({
 });
 
 // evaluate(kb, profile, { conditionCodes? }) → [entry] na ordem das condições
-const evaluate = (kb, profile = {}, { conditionCodes = null } = {}) => {
+const evaluate = (kb, rawProfile = {}, { conditionCodes = null } = {}) => {
+  const profile = normalizeProfile(rawProfile);
   const age = profile.age ?? null;
   const out = [];
   const conditions = kb.conditions

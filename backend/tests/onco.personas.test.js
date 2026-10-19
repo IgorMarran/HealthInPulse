@@ -105,17 +105,44 @@ test('Roberto respondendo "perdi peso" E com a balança: a perda conta uma vez s
   // e o red flag NEOPLASIA olha a resposta, não a balança
   assert.equal(both.r.redFlag?.code, 'NEOPLASIA');
 
-  // balança estável (valor 0) também substitui a resposta
-  const stable = riskEngine.assess(KB, {
-    profile: ROBERTO_PROFILE, answers: { perda_peso_inexplicada: true },
-    wearableEvidence: { perda_peso_objetiva: { value: 0, weight: 1 } },
-  });
-  const ccr = byCode(stable).CA_COLORRETAL;
-  assert.equal(ccr.contributions.find(c => c.code === 'perda_peso_inexplicada').delta, 0);
-  assert.ok(ccr.contributions.find(c => c.code === 'perda_peso_objetiva').delta < 0);
   // sem balança, a resposta conta normalmente
   const noScale = byCode(riskEngine.assess(KB, { profile: ROBERTO_PROFILE, answers: { perda_peso_inexplicada: true } }));
   assert.ok(noScale.CA_COLORRETAL.contributions.find(c => c.code === 'perda_peso_inexplicada').delta > 0);
+  // objetivo 0 (se alguém o injetar) não substitui: só o positivo substitui
+  const zero = byCode(riskEngine.assess(KB, {
+    profile: ROBERTO_PROFILE, answers: { perda_peso_inexplicada: true },
+    wearableEvidence: { perda_peso_objetiva: { value: 0, weight: 1 } },
+  })).CA_COLORRETAL;
+  assert.ok(!zero.contributions.find(c => c.code === 'perda_peso_inexplicada').superseded);
+  assert.ok(zero.contributions.find(c => c.code === 'perda_peso_inexplicada').delta > 0);
+});
+
+// Revisão T5: balança velha, curta ou comprada depois da perda não pode
+// anular um "sim" relatado (antes virava evidência negativa).
+test('balança sem queda não gera evidência nem muda o resultado de quem disse "perdi peso"', () => {
+  const answers = { perda_peso_inexplicada: true, mudanca_habito_intestinal: true, dor_abdominal_persistente: true };
+  const base = byCode(riskEngine.assess(KB, { profile: ROBERTO_PROFILE, answers }));
+  const withTrend = (readings) => {
+    const trend = weightTrendFromReadings(readings, { now: NOW });
+    assert.deepEqual(trend.evidence, {}, 'balança sem queda não é evidência');
+    return byCode(riskEngine.assess(KB, { profile: ROBERTO_PROFILE, answers, wearableEvidence: trend.evidence }));
+  };
+  // série velha e estável (80 kg há 170 e 130 dias)
+  const stale = withTrend([{ recordedAt: new Date(NOW - 170 * DAY), weight: 80 }, { recordedAt: new Date(NOW - 130 * DAY), weight: 80 }]);
+  // balança comprada há 35 dias, depois da perda: peso já estável
+  const bought = withTrend(Array.from({ length: 6 }, (_, i) => ({ recordedAt: new Date(NOW - (35 - i * 7) * DAY), weight: 76 })));
+  for (const r of [stale, bought]) {
+    assert.equal(r.CA_COLORRETAL.posterior, base.CA_COLORRETAL.posterior);
+    assert.equal(r.CA_COLORRETAL.level, base.CA_COLORRETAL.level);
+    assert.ok(r.CA_COLORRETAL.contributions.find(c => c.code === 'perda_peso_inexplicada').delta > 0);
+  }
+  assert.equal(base.CA_COLORRETAL.level, 'INVESTIGAR');
+  // e a fase oncológica pode perguntar "perdeu peso?" (nenhum positivo da balança)
+  const asked = [];
+  const ans = {};
+  for (let n; (n = questionRunner.next(KB, { profile: ROBERTO_PROFILE, answers: ans, panel: 'ONCOLOGIA', max: 20,
+    evidence: weightTrendFromReadings(ROBERTO_WEIGHTS.slice(-2), { now: NOW }).evidence }));) { asked.push(n.symptom); ans[n.symptom] = 0; }
+  assert.ok(asked.includes('perda_peso_inexplicada'));
 });
 
 test('mulher de 22 anos sem queixas: tudo ROTINA, nenhuma pergunta de câncer', () => {

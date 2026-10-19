@@ -18,6 +18,8 @@ const { candidatesFor } = require('./questions');
 const { normalizeProfile } = require('./profile');
 const { SUPERSEDES } = require('./riskEngine');
 
+const isPositive = (raw) => (raw != null && typeof raw === 'object' ? raw.value : raw) === 1;
+
 const eligible = (cond, profile) =>
   cond.active !== false &&
   cond.category === 'ONCOLOGICA' &&
@@ -70,7 +72,7 @@ const next = (kb, { profile: rawProfile = {}, answers = {}, panel = 'ONCOLOGIA',
       const cs = lk.get(cand.symptom);
       if (!cs) continue;
       const by = SUPERSEDES[cand.symptom];
-      if (by && known.has(by) && lk.has(by)) continue; // a balança já respondeu
+      if (by && isPositive(evidence[by]) && lk.has(by)) continue; // a balança já mostrou a perda
       const lr = cs.pSx / cs.pNoSx;
       if (!(lr > 0) || !Number.isFinite(lr)) continue;
       targets.push({ code, label: conds.get(code).label, lr });

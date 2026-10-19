@@ -187,20 +187,20 @@ const summarizeForPatient = (w = {}) => {
 // (likelihood só nos cânceres colorretal e de pulmão). É uma chave NOVA,
 // diferente de perda_peso_inexplicada (a pergunta), de propósito: o red
 // flag NEOPLASIA olha a resposta da pergunta, não a balança. Quando a
-// balança tem dado, ela substitui a resposta no motor oncológico (ver
-// riskEngine.SUPERSEDES: "pesado na balança").
+// balança MOSTRA a perda, ela substitui a resposta no motor oncológico
+// (ver riskEngine.SUPERSEDES: "pesado na balança").
 //
 // Regra (pura, testável):
 //   - leituras com peso nos últimos `windowDays` (padrão 180);
 //   - pico = maior peso ANTES da última leitura; queda = (pico − último)/pico;
 //   - queda ≥ `threshold` (5%) → { perda_peso_objetiva: { value: 1 } };
-//   - sem queda, mas com ≥ 2 leituras cobrindo ≥ `minSpanDays` (30) →
-//     value 0 (a balança mostra peso estável: evidência negativa);
-//   - menos que isso → sem evidência (hasData false ou pouca série).
+//   - qualquer outro caso → SEM evidência. A balança nunca diz "não
+//     perdeu peso": série velha, curta ou comprada depois da perda não
+//     pode anular um "sim" da pessoa (decisão do controlador, revisão T5).
 const WEIGHT_KEY = 'perda_peso_objetiva';
 
 const weightTrendFromReadings = (readings = [], {
-  now = new Date(), windowDays = 180, threshold = 0.05, minSpanDays = 30,
+  now = new Date(), windowDays = 180, threshold = 0.05,
 } = {}) => {
   const since = now.getTime() - windowDays * 24 * 3600 * 1000;
   const pts = readings
@@ -229,11 +229,7 @@ const weightTrendFromReadings = (readings = [], {
     return { ...base, lost: true, evidence: { [WEIGHT_KEY]: { value: 1, weight: 1 } },
       summary: `Balança: perda de ${fmt(drop * 100)}% do peso em ${days} dias (${fmt(peak.kg)} → ${fmt(last.kg)} kg)` };
   }
-  if (spanDays >= minSpanDays) {
-    return { ...base, lost: false, evidence: { [WEIGHT_KEY]: { value: 0, weight: 1 } },
-      summary: `Balança: peso estável nos últimos ${spanDays} dias (${fmt(last.kg)} kg)` };
-  }
-  return { ...base, hasData: false, lost: false, evidence: {}, summary: null };
+  return { ...base, lost: false, evidence: {}, summary: null };
 };
 
 // Lê os pesos do paciente (VitalSign.weight, qualquer fonte: balança

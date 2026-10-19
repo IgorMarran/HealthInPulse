@@ -78,10 +78,10 @@ const shouldStop = (posteriors, askedCount, opts = {}) => {
   return { stop: false };
 };
 
-// Evidência com valor 0/1 (aceita o formato { value, weight })
-const isBinaryEvidence = (raw) => {
+// Evidência positiva (valor 1; aceita o formato { value, weight })
+const isPositiveEvidence = (raw) => {
   const v = raw != null && typeof raw === 'object' ? raw.value : raw;
-  return v === 0 || v === 1;
+  return v === 1;
 };
 
 // ─── Efeito de uma regra de prior ───────────────────────────────────
@@ -102,8 +102,9 @@ const applyEffect = (p, rule) => {
 //   (padrão: matrix.CORRELATIONS; ficam em código, fora do banco)
 // opts.supersedes: { sintomaRelatado: achadoObjetivo }. Numa condição que
 //   tem likelihood para o achado objetivo, se a evidência traz esse achado
-//   (0 ou 1), o relatado não conta (entra no "por quê" com delta 0 e
-//   `supersededBy`). Evita contar a mesma perda de peso duas vezes. O
+//   POSITIVO (valor 1), o relatado não conta (entra no "por quê" com delta
+//   0 e `supersededBy`). Achado objetivo ausente ou 0 não substitui nada:
+//   a resposta conta normalmente. Evita contar a mesma perda de peso duas vezes. O
 //   motor crônico não usa (padrão {}), então o v7 não muda.
 const createEngine = (kb, { categories = null, correlations = CORRELATIONS, supersedes = {} } = {}) => {
   // Condições ativas da categoria, na ordem de sortOrder. A ordem importa:
@@ -204,7 +205,7 @@ const createEngine = (kb, { categories = null, correlations = CORRELATIONS, supe
       if (value == null || (value !== 0 && value !== 1)) continue;
 
       const by = supersedes[sx];
-      if (by && lk.has(by) && isBinaryEvidence(evidence[by])) {
+      if (by && lk.has(by) && isPositiveEvidence(evidence[by])) {
         if (contributions) {
           contributions.push({ symptomCode: sx, value, weight: 0, lr: 1, deltaLogOdds: 0, supersededBy: by });
         }

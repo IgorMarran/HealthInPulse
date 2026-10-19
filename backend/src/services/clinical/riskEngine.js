@@ -33,8 +33,9 @@ const DISPLAY_CAP = 0.20;
 
 // Achado objetivo substitui o relatado no motor oncológico (só nele: a
 // fase crônica e o red flag NEOPLASIA continuam usando a resposta).
-// "Pesado na balança": com perda_peso_objetiva (0 ou 1) presente, a
-// resposta "perdi peso" não conta nos cânceres que têm a balança.
+// "Pesado na balança": com perda_peso_objetiva POSITIVA (valor 1), a
+// resposta "perdi peso" não conta nos cânceres que têm a balança. Sem a
+// balança mostrando perda, a resposta conta normalmente.
 const SUPERSEDES = { perda_peso_inexplicada: 'perda_peso_objetiva' };
 
 const logit = (p) => Math.log(p / (1 - p));

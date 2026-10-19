@@ -114,15 +114,15 @@ test('balança: queda ≥ 5% em até 180 dias vira perda_peso_objetiva', () => {
   assert.equal(t.dropPct, 9.5);
   assert.equal(t.days, 90);
   assert.match(t.summary, /9,5% do peso em 90 dias \(84 → 76 kg\)/);
-  // 4% não basta; série longa e estável → evidência negativa
-  assert.equal(weightTrendFromReadings(series(80, 76.8, 90), { now: NOW }).evidence.perda_peso_objetiva.value, 0);
-  // pouca série (< 30 dias) e sem queda → nada
-  assert.deepEqual(weightTrendFromReadings(series(80, 80, 10), { now: NOW }).evidence, {});
-  // uma leitura só → nada
-  assert.equal(weightTrendFromReadings([{ recordedAt: NOW, weight: 70 }], { now: NOW }).hasData, false);
+  // a balança só emite POSITIVO: nunca "não perdeu peso" (valor 0)
+  const none = (readings) => assert.deepEqual(weightTrendFromReadings(readings, { now: NOW }).evidence, {});
+  none(series(80, 76.1, 90));   // 4,9%: abaixo do limiar, mas não é "estável"
+  none(series(80, 80, 10));     // série curta
+  none(series(80, 80, 170));    // série longa e estável
+  none([{ recordedAt: new Date(NOW - 170 * DAY), weight: 80 }, { recordedAt: new Date(NOW - 130 * DAY), weight: 80 }]); // velha
+  none([{ recordedAt: NOW, weight: 70 }]);                                                                             // 1 leitura
   // a queda antiga (fora dos 180 dias) não conta
-  const old = [...series(90, 80, 60).map(p => ({ ...p, recordedAt: new Date(p.recordedAt - 300 * DAY) })), ...series(80, 79.5, 90)];
-  assert.equal(weightTrendFromReadings(old, { now: NOW }).evidence.perda_peso_objetiva.value, 0);
-  // ganho de peso não é perda
-  assert.equal(weightTrendFromReadings(series(70, 80, 90), { now: NOW }).evidence.perda_peso_objetiva.value, 0);
+  none([...series(90, 80, 60).map(p => ({ ...p, recordedAt: new Date(p.recordedAt - 300 * DAY) })), ...series(80, 79.5, 90)]);
+  none(series(70, 80, 90));     // ganho de peso
+  assert.equal(weightTrendFromReadings(series(80, 76.1, 90), { now: NOW }).lost, false);
 });
