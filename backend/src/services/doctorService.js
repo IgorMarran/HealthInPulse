@@ -40,7 +40,9 @@ const getPatients = async (doctorId, { page = 1, limit = 20, search } = {}) => {
     ...(search
       ? {
           OR: [
-            { fullName: { contains: search, mode: 'insensitive' } },
+            // Sem mode:'insensitive': o SQLite não suporta (dava 500). O LIKE
+            // do SQLite já ignora maiúsculas/minúsculas em letras ASCII.
+            { fullName: { contains: search } },
             { cpf:      { contains: search } },
           ],
         }
