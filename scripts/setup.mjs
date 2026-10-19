@@ -216,11 +216,13 @@ async function main() {
     await npmCi(BACKEND, 'backend');
     await npmCi(FRONTEND, 'frontend');
     ok('dependências instaladas');
-
-    step('Gerando o Prisma Client');
-    await runPrisma(['generate']);
-    ok('Prisma Client gerado');
   }
+
+  // Também no db:reset: depois de um `git pull` que mexe no schema, o
+  // client antigo não conhece as tabelas novas e o seed quebra.
+  step('Gerando o Prisma Client');
+  await runPrisma(['generate']);
+  ok('Prisma Client gerado');
 
   step('Criando/atualizando o banco SQLite');
   const dbFile = dbFilePath(env);
