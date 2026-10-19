@@ -2,7 +2,20 @@ const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const { seedKnowledge } = require('./seedKnowledge');
 
+// O seed faz as triagens das personas pelo triageService, que carrega
+// config/socket → config/jwt: sem JWT_ACCESS_SECRET e JWT_REFRESH_SECRET
+// no ambiente, ele nem carrega. O `new PrismaClient()` lê o backend/.env
+// para o process.env; por isso a conferência (requireJwtSecrets) vem
+// depois dele. Nada de segredo padrão: quem gera é o `npm run setup`.
 const prisma = new PrismaClient();
+
+const requireJwtSecrets = () => {
+  const missing = ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'].filter((k) => !process.env[k]);
+  if (missing.length) {
+    throw new Error(`Seed: faltam ${missing.join(' e ')} (as triagens das personas carregam o config/jwt). `
+      + 'Rode `npm run setup` na raiz (gera o backend/.env) ou defina as variáveis.');
+  }
+};
 
 const DAY  = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
@@ -97,6 +110,7 @@ const expectOncology = (name, res, expected) => {
 };
 
 async function main() {
+  requireJwtSecrets(); // antes de apagar qualquer coisa
   console.log('🌱 Iniciando seed...');
 
   // ─── Base de conhecimento clínico (parâmetros do motor) ───

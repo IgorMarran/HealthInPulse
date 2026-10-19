@@ -37,7 +37,7 @@ test.before(() => {
   const seed = spawnSync(process.execPath, ['src/prisma/seed.js'], { cwd: BACKEND, env, encoding: 'utf8' });
   assert.equal(seed.status, 0, `seed falhou:\n${seed.stdout}\n${seed.stderr}`);
 
-  // O app lê DATABASE_URL ao carregar config/database: aponta para o temporário
+  // Ordem importa: o env vem ANTES do require (config/database lê DATABASE_URL ao carregar)
   Object.assign(process.env, { DATABASE_URL: url, NODE_ENV: 'test' });
   prisma = require('../src/config/database');
   riskService = require('../src/services/riskService');
