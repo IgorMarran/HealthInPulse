@@ -2,14 +2,19 @@
 // Fluxo adaptativo: PROFILE → QUESTION (loop) → RESULT.
 // Cada round o backend devolve a próxima pergunta + ranking parcial
 // das hipóteses + resumo do que a pulseira Care Plus detectou.
+// As perguntas vêm em duas etapas: 1) condições crônicas (status
+// INTERVIEW) e 2) câncer (status ONCO_INTERVIEW, phase ONCOLOGIA, com o
+// "porquê" de cada pergunta). O resultado traz `result.oncology`, mostrado
+// como para o visitante do stand: sem %, sem vermelho, RR só acima de 1,2×.
 
 import { useState } from 'react';
+import clsx from 'clsx';
 import { useFetch } from '@/hooks';
 import { useAuth } from '@/contexts/AuthContext';
 import { triageService } from '@/services';
 import {
   ClipboardList, ChevronRight, CheckCircle, Sparkles, Coins, Target,
-  HelpCircle, Activity, AlertTriangle, Watch, TrendingUp,
+  HelpCircle, Activity, AlertTriangle, Watch, TrendingUp, Microscope, FlaskConical, Leaf,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -18,7 +23,20 @@ import { ptBR } from 'date-fns/locale';
 import confetti from 'canvas-confetti';
 import ProfileField from '@/components/triage/ProfileField';
 import QuestionCard from '@/components/triage/QuestionCard';
-import { RISK_CLASS, RISK_LABEL } from '@/lib/risk';
+import ConditionRiskCard from '@/components/risk/ConditionRiskCard';
+import ScreeningList from '@/components/risk/ScreeningList';
+import Disclaimer from '@/components/common/Disclaimer';
+import { RISK_CLASS, RISK_LABEL, oncoLevel } from '@/lib/risk';
+import { isFieldVisible, visibleProfile } from '@/lib/conditions';
+
+const PATIENT_DISCLAIMER =
+  'Triagem de risco, não diagnóstico. Os números são estimativas didáticas; quem decide os exames é você com o seu médico.';
+
+// Confete só quando não há risco nenhum: crônico baixo, câncer em rotina
+// e sem red flag (a v7 soltava confete até em risco alto).
+const noRisk = (data) =>
+  data.result?.riskLevel === 'LOW' && !data.redFlag &&
+  (!data.result.oncology || data.result.oncology.level === 'ROTINA');
 
 export function Triage() {
   const { refreshCoins } = useAuth();
@@ -42,7 +60,9 @@ export function Triage() {
     if (!session?.triageId) return;
     setBusy(true);
     try {
-      const { data } = await triageService.answer(session.triageId, { profile: profileForm });
+      // Só os campos visíveis (ex.: sem Papanicolau para homem, sem maços-ano para quem não fuma)
+      const profile = visibleProfile(session.schema, profileForm);
+      const { data } = await triageService.answer(session.triageId, { profile });
       setSession(data);
     } catch { toast.error('Erro ao enviar perfil'); }
     finally { setBusy(false); }
@@ -56,12 +76,12 @@ export function Triage() {
       if (followUps) payload.followUps = followUps;
       const { data } = await triageService.answer(session.triageId, payload);
       setSession(data);
-      if (data.stage === 'RESULT' && data.result?.riskLevel && data.result.riskLevel !== 'INCONCLUSIVE' && !data.redFlag) {
-        confetti({ particleCount: 80, spread: 70, origin: { y: 0.5 },
-          colors: ['#003F7E', '#00A0DC', '#fbbf24', '#16a34a'] });
+      if (data.stage === 'RESULT') {
+        if (noRisk(data)) {
+          confetti({ particleCount: 80, spread: 70, origin: { y: 0.5 },
+            colors: ['#003F7E', '#00A0DC', '#fbbf24', '#16a34a'] });
+        }
         refreshCoins();
-        refetch();
-      } else if (data.stage === 'RESULT') {
         refetch();
       }
     } catch { toast.error('Erro ao enviar resposta'); }
@@ -77,7 +97,7 @@ export function Triage() {
         <ClipboardList size={22} /> Triagem clínica
       </h1>
       <p className="text-surface-500 text-sm mt-0.5">
-        Motor bayesiano com 8 condições + dados da pulseira Care Plus
+        Motor bayesiano com 8 condições crônicas + risco de 5 cânceres + dados da pulseira Care Plus
       </p>
     </div>
   );
@@ -131,7 +151,7 @@ export function Triage() {
                 field={field}
                 value={profileForm[field.field]}
                 onChange={(v) => setProfileForm({ ...profileForm, [field.field]: v })}
-                visible={!field.showIfField || profileForm[field.showIfField]}
+                visible={isFieldVisible(field, profileForm)}
               />
             ))}
           </div>
@@ -145,14 +165,17 @@ export function Triage() {
 
   // ─── Etapa: PERGUNTA ─────────────────────────────────────
   if (session.stage === 'QUESTION') {
+    const onco = session.phase === 'ONCOLOGIA' || session.status === 'ONCO_INTERVIEW';
     return (
       <div className="space-y-6 animate-fade-in max-w-2xl">
         {Header}
+        <PhaseBanner onco={onco} />
         {wearableBox}
         <QuestionCard
           question={session.question}
           progress={session.progress}
-          explanation={session.explanation}
+          explanation={onco ? null : session.explanation}
+          reason={session.reason}
           busy={busy}
           onAnswer={answerSymptom}
         />
@@ -173,12 +196,112 @@ export function Triage() {
         ) : (
           <ResultCard result={session.result} onRestart={restart} />
         )}
+        <OncologyResult oncology={session.result?.oncology} />
         {history?.items?.length > 0 && <History items={history.items} />}
       </div>
     );
   }
 
   return null;
+}
+
+// ─── Etapas: 1) crônicas, 2) câncer ───────────────────────
+function PhaseBanner({ onco }) {
+  const steps = [
+    { n: 1, label: 'Condições crônicas', active: !onco, done: onco },
+    { n: 2, label: 'Câncer',             active: onco,  done: false },
+  ];
+  return (
+    <div className="glass p-4 space-y-2">
+      <p className="text-sm font-medium text-surface-800">
+        {onco ? 'Etapa 2 de 2 — câncer' : 'Etapa 1 de 2 — condições crônicas'}
+      </p>
+      <div className="flex gap-2" aria-hidden>
+        {steps.map((st) => (
+          <div key={st.n} className="flex-1">
+            <div className={clsx('h-1.5 rounded-full', st.active || st.done ? 'bg-brand-600' : 'bg-surface-100')} />
+            <p className={clsx('text-[11px] mt-1', st.active ? 'text-brand-700 font-medium' : 'text-surface-400')}>
+              {st.n}. {st.label}
+            </p>
+          </div>
+        ))}
+      </div>
+      {onco && (
+        <p className="text-xs text-surface-500 flex items-start gap-1.5">
+          <Microscope size={13} className="shrink-0 mt-px text-brand-500" aria-hidden />
+          Algumas perguntas sobre sinais que valem um exame. Responder “sim” não quer dizer câncer:
+          na maioria das vezes a causa é outra.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Resultado oncológico (etapa 2) ──────────────────────
+// Para o paciente, como para o visitante do stand: categoria, frequência
+// natural e risco relativo (sem %); verde → âmbar → laranja, nunca vermelho.
+function OncologyResult({ oncology }) {
+  const conds = oncology?.conditions ?? [];
+  if (!conds.length) return null;
+  const lv = oncoLevel(oncology.level);
+  const eligible    = conds.filter((c) => c.eligible && c.display);
+  const notEligible = conds.filter((c) => !c.eligible || !c.display);
+  const screening   = (oncology.screening ?? []).filter((s) => s.status !== 'FUTURO');
+  const future      = (oncology.screening ?? []).filter((s) => s.status === 'FUTURO');
+  const modifiable  = [...new Map((oncology.modifiable ?? []).map((m) => [m.label, m])).values()];
+  const extra = [
+    ...(oncology.labs ?? []).map((l) => ({ key: l.ruleId, text: `${l.examTitle || l.findingName}: ${l.label.toLowerCase()}` })),
+    ...(oncology.weightTrend?.summary ? [{ key: 'balanca', text: oncology.weightTrend.summary }] : []),
+  ];
+
+  return (
+    <section className="space-y-4" aria-labelledby="onco-title">
+      <div className={clsx('glass p-5 border', lv.soft)}>
+        <p className="section-title">Etapa 2 de 2 · câncer (triagem de risco)</p>
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          <span className={lv.badge}>{lv.label}</span>
+          <h2 id="onco-title" className="font-display font-semibold text-surface-900">{lv.headline}</h2>
+        </div>
+        <p className="text-sm text-surface-600 mt-2 leading-relaxed">{lv.visitor}</p>
+      </div>
+
+      {eligible.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {eligible.map((c) => <ConditionRiskCard key={c.code} condition={c} audience="visitor" />)}
+        </div>
+      )}
+      {notEligible.length > 0 && (
+        <p className="text-xs text-surface-500">
+          Não avaliados agora: {notEligible.map((c) => `${c.label} (${c.reason || 'fora da faixa'})`).join(' · ')}
+        </p>
+      )}
+
+      {extra.length > 0 && (
+        <div className="glass p-4">
+          <p className="section-title mb-2 flex items-center gap-1"><FlaskConical size={12} /> Também entraram no cálculo</p>
+          <ul className="text-sm text-surface-700 space-y-1 list-disc list-inside">
+            {extra.map((e) => <li key={e.key}>{e.text}</li>)}
+          </ul>
+        </div>
+      )}
+
+      <div className="glass p-5 space-y-3">
+        <p className="section-title">Rastreamento indicado</p>
+        <ScreeningList items={screening} future={future} audience="visitor" />
+      </div>
+
+      {modifiable.length > 0 && (
+        <div className="glass p-5 space-y-2">
+          <p className="section-title flex items-center gap-1"><Leaf size={12} /> O que você pode mudar</p>
+          <ul className="text-sm text-surface-700 space-y-1 list-disc list-inside">
+            {modifiable.map((m) => <li key={m.ruleId}>{m.label} <span className="text-surface-400">({m.conditionLabel.toLowerCase()})</span></li>)}
+          </ul>
+        </div>
+      )}
+
+      <Disclaimer text={PATIENT_DISCLAIMER} audience="visitor" />
+    </section>
+  );
 }
 
 // ─── Leaderboard parcial de hipóteses ─────────────────────
