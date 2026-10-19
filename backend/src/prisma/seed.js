@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
+const { seedKnowledge } = require('./seedKnowledge');
 
 const prisma = new PrismaClient();
 
@@ -11,6 +12,12 @@ const round = (v, d = 0) => Number(v.toFixed(d));
 
 async function main() {
   console.log('🌱 Iniciando seed...');
+
+  // ─── Base de conhecimento clínico (parâmetros do motor) ───
+  // Primeiro: as triagens da demo e o motor leem a base do banco.
+  const kbCounts = await seedKnowledge(prisma);
+  console.log(`  → Base de conhecimento: ${kbCounts.conditions} condições, ${kbCounts.symptoms} sintomas, `
+    + `${kbCounts.conditionSymptoms} likelihoods, ${kbCounts.priorRules} regras de prior`);
 
   const hash = (pw) => bcrypt.hash(pw, 12);
 
