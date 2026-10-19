@@ -15,6 +15,7 @@ const { router: notifRouter }       = require('./routes/notificationRoutes');
 const { router: aiReportRouter }    = require('./routes/aiReportRoutes');
 const { router: appointmentRouter } = require('./routes/appointmentRoutes');
 const { router: wearableRouter }    = require('./routes/wearableRoutes');
+const { router: publicRouter, guard: publicGuard } = require('./routes/publicRoutes');
 const goalRoutes    = require('./routes/goalRoutes');
 const rewardRoutes  = require('./routes/rewardRoutes');
 const errorMiddleware = require('./middlewares/errorMiddleware');
@@ -48,10 +49,15 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // ─── parsing ─────────────────────────────────────────────────
+// Teste público (/api/public): rate limit de 300/min e corpo de até 16 KB,
+// antes do parser geral (que pula o corpo já lido).
+app.use('/api/public', publicGuard);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ─── logging HTTP ────────────────────────────────────────────
+// Só método, URL, status e tempo (nunca o corpo): o teste público
+// promete que nada do que o visitante responde é gravado.
 app.use(morgan(
   process.env.NODE_ENV === 'development' ? 'dev' : 'combined',
   { stream: { write: (msg) => logger.http(msg.trim()) } },
@@ -81,6 +87,7 @@ app.use('/api/appointments',  appointmentRouter);
 app.use('/api/wearables',     wearableRouter);
 app.use('/api/goals',         goalRoutes);
 app.use('/api/rewards',       rewardRoutes);
+app.use('/api/public',        publicRouter);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date() }));

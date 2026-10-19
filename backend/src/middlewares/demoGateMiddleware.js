@@ -20,6 +20,12 @@ const logger    = require('../utils/logger');
 const COOKIE      = 'demo_access';
 const MAX_AGE_MS  = 30 * 24 * 60 * 60 * 1000; // 30 dias
 const OPEN_PATHS  = new Set(['/health', '/demo-access']);
+// Teste público do stand (/teste, aberto pelo QR): a página, os arquivos
+// do build e a API dele passam sem senha. Por prefixo: '/teste' libera
+// '/teste' e '/teste/...', mas não '/testes'.
+const OPEN_PREFIXES = ['/teste', '/assets/', '/favicon.svg', '/api/public/'];
+const isOpen = (p) => OPEN_PATHS.has(p) || OPEN_PREFIXES.some((pre) =>
+  p === pre || p.startsWith(pre.endsWith('/') ? pre : `${pre}/`));
 
 // Trocar a senha invalida os cookies já emitidos
 const sign = (password) => crypto
@@ -143,7 +149,7 @@ const demoGate = () => {
   );
 
   router.use((req, res, next) => {
-    if (OPEN_PATHS.has(req.path)) return next();
+    if (isOpen(req.path)) return next();
 
     const cookie = readCookie(req, COOKIE);
     if (cookie && safeEqual(cookie, token)) return next();
@@ -159,3 +165,4 @@ const demoGate = () => {
 };
 
 module.exports = demoGate;
+module.exports.isOpen = isOpen;
