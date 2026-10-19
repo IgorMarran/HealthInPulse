@@ -1,5 +1,6 @@
 const patientService = require('../services/patientService');
 const doctorService  = require('../services/doctorService');
+const riskService    = require('../services/riskService');
 
 const getProfile = async (req, res, next) => {
   try {
@@ -60,8 +61,16 @@ const getDashboard = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// Painel de risco do próprio paciente (câncer + crônicas)
+const getRisk = async (req, res, next) => {
+  try {
+    const patient = await patientService.getProfile(req.user.id);
+    res.json(await riskService.assessPatient(patient.id));
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   getProfile, updateProfile, updateAvatar,
   addVitalSign, getVitalSigns, getLatestVitals,
-  getDashboard,
+  getDashboard, getRisk,
 };

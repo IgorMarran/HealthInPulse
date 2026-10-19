@@ -32,5 +32,6 @@ router.delete('/patients/:patientId', ctrl.unlinkPatient);
 // ─── Consolidado / Histórico (abas Wearable / Histórico / Relatório) ──
 router.get('/patients/:patientId/consolidated', ctrl.getPatientConsolidated);
 router.get('/patients/:patientId/history',      ctrl.getPatientHistory);
+router.get('/patients/:patientId/risk',         ctrl.getPatientRisk);
 
 module.exports = router;
