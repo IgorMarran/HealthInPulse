@@ -44,6 +44,12 @@ jobs:
       - name: Setup é idempotente (rodar de novo não quebra)
         run: npm run setup
 
+      # Motor, base de conhecimento, exames, rastreamento e personas da
+      # feira (inclui o seed num SQLite temporário). Precisa do Prisma
+      # Client gerado pelo setup.
+      - name: Testes unitários (npm test)
+        run: npm test
+
       - name: Build do frontend
         run: npm run build
 
