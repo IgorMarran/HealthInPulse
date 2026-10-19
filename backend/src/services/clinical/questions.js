@@ -8,6 +8,7 @@
 // service consiga, depois, calcular as escalas com as mesmas respostas.
 
 const { S } = require('./matrix');
+const { evalWhen } = require('./kb/conditions');
 
 // ─── Demografia (sempre coletada antes de tudo) ─────────────────────
 const DEMOGRAPHIC_QUESTIONS = [
@@ -23,7 +24,8 @@ const DEMOGRAPHIC_QUESTIONS = [
   { id: 'smoker',       field: 'smoker',       type: 'boolean', label: 'Você fuma ou já fumou regularmente?' },
   { id: 'packYears',    field: 'packYears',    type: 'number',  label: 'Maços-ano (média de maços/dia × anos de tabagismo)',
     min: 0, max: 100, step: 0.5,
-    showIf: (p) => p.smoker === true || p.smoker === 'true' || p.smoker === 1 },
+    // showIf em JSON (kb/conditions.js): o mesmo `smoker === true || 'true' || 1` da v7
+    showIf: [{ field: 'smoker', op: 'in', value: [true, 'true', 1] }] },
 ];
 
 // ─── Perguntas vinculadas a sintomas (alimentam o motor) ────────────
@@ -90,7 +92,7 @@ const SYMPTOM_QUESTIONS = [
   q(S.PELE_SECA, 'Sua pele anda mais ressecada que o habitual?', 'boolean', { cost: 1 }),
   q(S.QUEDA_CABELO, 'Notou queda ou afinamento de cabelo?', 'boolean', { cost: 1 }),
   q(S.IRREG_MENSTRUAL, 'Mulheres: notou irregularidade menstrual recente?', 'boolean', { cost: 2,
-    showIf: (p) => p.sex === 'female' }),
+    showIf: [{ field: 'sex', op: 'eq', value: 'female' }] }),
   q(S.ROUQUIDAO, 'Tem notado rouquidão persistente?', 'boolean', { cost: 1 }),
   q(S.MUDANCA_7_SINTOMAS, 'Houve mudança em vários (≥7) desses sintomas no último ano?', 'boolean', { cost: 1 }),
 
@@ -181,13 +183,34 @@ const toBinary = (question, raw) => {
 const byId = new Map(SYMPTOM_QUESTIONS.map(q => [q.id, q]));
 const getQuestionForSymptom = (sx) => byId.get(sx) || null;
 
-// Candidatos para o motor (sintomas + custo) — filtra por showIf
-const candidatesForProfile = (profile = {}) => {
-  return SYMPTOM_QUESTIONS
-    .filter(q => !q.redFlagProbe)
-    .filter(q => !q.showIf || q.showIf(profile))
-    .map(q => ({ symptom: q.symptom, cost: q.cost, question: serializeQuestion(q) }));
-};
+// ─── Candidatas a pergunta (a partir do kb) ────────────────────────
+// kb: base normalizada (kb/buildFromSeed.js ou banco). panel escolhe o
+// painel ('CRONICA', 'ONCOLOGIA', 'RAPIDO'...). A ordem é a do sortOrder:
+// em empate de score no selectNextSymptom, vence quem vem primeiro.
+const candidatesFor = (kb, profile = {}, panel = 'CRONICA') =>
+  kb.symptoms
+    .filter(s => s.active !== false && s.kind === 'QUESTION' && !s.redFlagProbe)
+    .filter(s => (s.panels ?? []).includes(panel))
+    .filter(s => evalWhen(s.showIf, profile))
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    .map(s => ({ symptom: s.code, cost: s.cost, question: questionFromSymptom(s) }));
+
+// Mesmo formato do serializeQuestion (o que o frontend recebe). null do
+// banco vira undefined para o JSON da resposta não ganhar campos novos.
+const questionFromSymptom = (s) => ({
+  id:        s.code,
+  symptom:   s.code,
+  text:      s.questionText,
+  type:      s.type,
+  options:   s.options ?? undefined,
+  followUps: s.followUps ?? [],
+  scaleTag:  s.scaleTag ?? undefined,
+});
+
+// Compat v7: candidatas do painel crônico com o kb montado do JS.
+// require tardio: buildFromSeed importa este arquivo.
+const candidatesForProfile = (profile = {}) =>
+  candidatesFor(require('./kb/buildFromSeed').getSeedKb(), profile, 'CRONICA');
 
 const serializeQuestion = (q) => ({
   id:        q.id,
@@ -199,23 +222,20 @@ const serializeQuestion = (q) => ({
   scaleTag:  q.scaleTag,
 });
 
-// Demografia serializada para o frontend (sem `showIf` que é função)
-const demographicSchema = () => DEMOGRAPHIC_QUESTIONS.map(({ showIf, ...rest }) => ({
-  ...rest,
-  showIfField: showIf ? extractShowIfField(showIf) : null,
+// Demografia serializada para o frontend. `showIf` já é JSON; o
+// `showIfField` (campo que liga a pergunta) continua para o Triage.jsx.
+const demographicSchema = () => DEMOGRAPHIC_QUESTIONS.map((q) => ({
+  ...q,
+  showIf:      q.showIf ?? null,
+  showIfField: q.showIf?.[0]?.field ?? null,
 }));
-
-// Extrai trivialmente o nome do campo de uma função tipo (p) => p.smoker
-const extractShowIfField = (fn) => {
-  const src = fn.toString();
-  const m = src.match(/p\.(\w+)/);
-  return m ? m[1] : null;
-};
 
 module.exports = {
   DEMOGRAPHIC_QUESTIONS,
   SYMPTOM_QUESTIONS,
+  candidatesFor,
   candidatesForProfile,
+  questionFromSymptom,
   getQuestionForSymptom,
   serializeQuestion,
   demographicSchema,
