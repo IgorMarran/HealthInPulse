@@ -88,25 +88,28 @@ export default function QuickTest() {
     call({ profile: prof, answers: ans });
   };
 
-  const answer = (value, followUps) => {
+  const answer = async (value, followUps) => {
     const q = res?.question;
     if (!q) return;
     const next = { ...answers, [q.id]: value };
     const keys = [q.id];
     for (const fu of followUps ?? []) { next[fu.id] = fu.value; keys.push(fu.id); }
-    setAnswers(next);
-    setOrder((o) => [...o, keys]);
-    call({ profile: visibleProfile(schema, profile), answers: next });
+    // Só guarda a resposta se a API aceitou (erro de rede: tenta de novo)
+    if (await call({ profile: visibleProfile(schema, profile), answers: next })) {
+      setAnswers(next);
+      setOrder((o) => [...o, keys]);
+    }
   };
 
-  const back = () => {
+  const back = async () => {
     if (order.length === 0) { setError(null); setStep('PROFILE'); return; }
     const last = order[order.length - 1];
     const next = { ...answers };
     for (const k of last) delete next[k];
-    setAnswers(next);
-    setOrder((o) => o.slice(0, -1));
-    call({ profile: visibleProfile(schema, profile), answers: next });
+    if (await call({ profile: visibleProfile(schema, profile), answers: next })) {
+      setAnswers(next);
+      setOrder((o) => o.slice(0, -1));
+    }
   };
 
   // ─── Topo da página a cada tela nova ───────────────────────
