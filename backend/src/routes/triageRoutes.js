@@ -7,7 +7,11 @@ const { authenticate, authorize } = require('../middlewares/authMiddleware');
 
 // Schema da triagem adaptativa (perfil + condições conhecidas).
 // Mantém a rota antiga para o frontend antigo não quebrar.
-const getQuestions = (_req, res) => res.json(triageService.getQuestions());
+const getQuestions = async (_req, res, next) => {
+  try {
+    res.json(await triageService.getQuestions());
+  } catch (err) { next(err); }
+};
 
 const start = async (req, res, next) => {
   try {

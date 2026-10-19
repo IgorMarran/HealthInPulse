@@ -22,22 +22,48 @@ const goalService    = require('./goalService');
 const { getIO }      = require('../config/socket');
 const { stringifyJson, parseTriage, parseJson } = require('../utils/jsonField');
 
-const matrix    = require('./clinical/matrix');
 const bayes     = require('./clinical/bayes');
 const redFlags  = require('./clinical/redFlags');
 const scales    = require('./clinical/scales');
 const questions = require('./clinical/questions');
 const wearable  = require('./clinical/wearableEvidence');
+const { buildFromSeed } = require('./clinical/kb/buildFromSeed');
+const { ageFromDob, mapGender, computeBmi } = require('./clinical/profile');
+
+// ─── Base de conhecimento + engine ─────────────────────────────────
+// Por ora o kb é montado do JS. A tarefa 3 troca `getKb` por
+// `kbRepository.get()` (banco); o engine é recriado só quando a versão
+// do kb muda (edição na tela "Base da IA").
+const CHRONIC_PANEL = 'CRONICA';
+let seedKb = null;
+const getKb = async () => {
+  if (!seedKb) seedKb = buildFromSeed();
+  return seedKb;
+};
+
+let engineCache = { kb: null, version: null, engine: null };
+const getEngine = async () => {
+  const kb = await getKb();
+  if (engineCache.kb !== kb || engineCache.version !== kb.version) {
+    engineCache = { kb, version: kb.version, engine: bayes.createEngine(kb, { categories: [CHRONIC_PANEL] }) };
+  }
+  return engineCache.engine;
+};
 
 // ─── Perguntas estáticas (compat) ──────────────────────────────────
 // O frontend antigo chama GET /triage/questions. Hoje a triagem é
 // adaptativa — devolvemos só o schema demográfico para a primeira tela.
-const getQuestions = () => ({
-  mode: 'adaptive',
-  demographic: questions.demographicSchema(),
-  totalSymptoms: questions.SYMPTOM_QUESTIONS.length,
-  conditions: matrix.listConditions().map(c => ({ code: c.code, label: c.label })),
-});
+const getQuestions = async () => {
+  const engine = await getEngine();
+  return {
+    mode: 'adaptive',
+    demographic: questions.demographicSchema(),
+    totalSymptoms: questions.SYMPTOM_QUESTIONS.length,
+    conditions: engine.kb.conditions
+      .filter(c => engine.conditionCodes.includes(c.code))
+      .map(c => ({ code: c.code, label: c.label })),
+  };
+};
 
 // ─── Estado da sessão (persistido em TriageAnswer.answers) ─────────
 const newSessionState = () => ({
@@ -164,8 +190,9 @@ const answerTriage = async (patientId, triageId, payload) => {
   }
 
   // ─── 4. Condição de parada por confiança/limite ──────────────────
-  const post = bayes.computePosterior(state.evidence, state.profile);
-  const stop = bayes.shouldStop(post, state.asked.length, {
+  const engine = await getEngine();
+  const post = engine.computePosterior(state.evidence, state.profile);
+  const stop = engine.shouldStop(post, state.asked.length, {
     maxQuestions: 18, minQuestions: 6, confidenceCutoff: 0.80,
   });
 
@@ -181,8 +208,9 @@ const answerTriage = async (patientId, triageId, payload) => {
 
 // ─── Finalizadores ─────────────────────────────────────────────────
 const finalize = async (triage, state, patientId) => {
-  const post   = bayes.computePosterior(state.evidence, state.profile);
-  const verdict = bayes.classifyRisk(post);
+  const engine  = await getEngine();
+  const post    = engine.computePosterior(state.evidence, state.profile);
+  const verdict = engine.classifyRisk(post);
   const computedScales = scales.runAll({
     answers:  state.rawAnswers,
     profile:  state.profile,
@@ -279,7 +307,7 @@ const finalizeWithRedFlag = async (triage, state, patientId) => {
 };
 
 // ─── Construção da resposta para o frontend ────────────────────────
-const buildResponse = (triageId, state, extra = {}) => {
+const buildResponse = async (triageId, state, extra = {}) => {
   const profileComplete = !!(state.profile.age != null && state.profile.sex && state.profile.bmi);
 
   // Etapa 1 — perfil
@@ -309,12 +337,13 @@ const buildResponse = (triageId, state, extra = {}) => {
   }
 
   // Etapa de pergunta — calcula a próxima
+  const engine     = await getEngine();
   const profile    = state.profile;
-  const candidates = questions.candidatesForProfile(profile);
-  const next = bayes.selectNextSymptom(candidates, state.evidence, profile, { targetThreshold: 0.5 });
+  const candidates = questions.candidatesFor(engine.kb, profile, CHRONIC_PANEL);
+  const next = engine.selectNextSymptom(candidates, state.evidence, profile, { targetThreshold: 0.5 });
 
-  const post   = bayes.computePosterior(state.evidence, profile);
-  const ranking = bayes.classifyRisk(post).ranking;
+  const post   = engine.computePosterior(state.evidence, profile);
+  const ranking = engine.classifyRisk(post).ranking;
 
   if (!next) {
     // Não tem mais o que perguntar — força fechamento
@@ -406,26 +435,6 @@ const binarizeFallback = (raw) => {
   if (raw === true || raw === 1 || raw === '1' || raw === 'Sim' || raw === 'sim') return 1;
   if (raw === false || raw === 0 || raw === '0' || raw === 'Não' || raw === 'nao' || raw === 'não') return 0;
   return null;
-};
-
-const ageFromDob = (dob) => {
-  const ms = Date.now() - new Date(dob).getTime();
-  return Math.floor(ms / (365.25 * 24 * 3600 * 1000));
-};
-
-const mapGender = (g) => {
-  if (!g) return null;
-  const s = String(g).toLowerCase();
-  if (['m', 'male', 'masculino', 'h'].includes(s)) return 'male';
-  if (['f', 'female', 'feminino'].includes(s))     return 'female';
-  return s;
-};
-
-const computeBmi = (heightCm, weightKg) => {
-  if (!heightCm || !weightKg) return null;
-  const h = heightCm > 3 ? heightCm / 100 : heightCm; // aceita m ou cm
-  if (!h) return null;
-  return Number((weightKg / (h * h)).toFixed(1));
 };
 
 // A sala do socket é por usuário (`user:<userId>`, ver config/socket.js);
