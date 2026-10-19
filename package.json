@@ -12,6 +12,7 @@
     "build": "npm --prefix frontend run build",
     "start": "npm --prefix backend start",
     "smoke": "node scripts/smoke.mjs",
+    "stand": "node scripts/stand.mjs",
     "test": "npm --prefix backend test",
     "qr": "node scripts/qr.mjs"
   },
