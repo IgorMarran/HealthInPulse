@@ -12,10 +12,12 @@
     "build": "npm --prefix frontend run build",
     "start": "npm --prefix backend start",
     "smoke": "node scripts/smoke.mjs",
-    "test": "npm --prefix backend test"
+    "test": "npm --prefix backend test",
+    "qr": "node scripts/qr.mjs"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "qrcode": "^1.5.4"
   },
   "engines": {
     "node": ">=20.0.0"

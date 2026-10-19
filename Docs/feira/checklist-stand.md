@@ -1,0 +1,87 @@
+# Checklist do stand: HealthInPulse v8 (sáb 24/10/2026)
+
+Marque na ordem. O que depende de uma pessoa está com o nome de quem faz no plano (`Docs/plano-feira/`).
+
+## Até quinta 22/10
+
+- [ ] **Banner na gráfica** (leva de 24 a 48 h): `Docs/feira/banner.pdf`, 80 × 120 cm, retrato.
+  - Antes de mandar, confira se a URL do QR é a do Render de verdade. Se mudou:
+    `npm run qr -- https://SEU-APP.onrender.com/teste --pdf` (regera o `qr-teste.svg`, o texto da URL no banner e o
+    PDF).
+  - Aponte a câmera do celular para o QR **no PDF aberto na tela** e confirme que abre o `/teste`.
+  - Plano B se a gráfica atrasar: imprimir o banner em folhas A3 (ou só o QR em A4) e colar num papel-cartão.
+- [ ] **Render no ar:** abrir `https://healthinpulse.onrender.com/teste` (ou a URL real) e fazer um teste completo.
+  - `npm run smoke -- --url=https://SEU-APP.onrender.com` passa.
+  - No Render, `KB_EDIT=false` (a edição da base fica só no notebook), `DEMO_PASSWORD` e `OPENAI_API_KEY` vazios.
+  - Keep-warm ligado (UptimeRobot ou cron-job.org chamando `/health` a cada 10 min); no plano grátis o serviço dorme
+    depois de 15 min sem acesso e demora ~1 min para acordar.
+
+## Quinta 22 ou sexta 23: ensaio no notebook Windows do stand
+
+- [ ] Clone limpo **fora do OneDrive** (ex.: `C:\dev\HealthInPulse`), no **Prompt de Comando (cmd)** ou Git Bash,
+  não no PowerShell.
+- [ ] `npm run setup` com internet (baixa o Prisma e as dependências).
+- [ ] **Desligar o Wi-Fi** e rodar `npm run stand`. Abrir `http://localhost:3000`:
+  - [ ] `/teste` completo (capa → perfil → perguntas → resultado) em tela cheia (F11);
+  - [ ] login da médica → Roberto em **INVESTIGAR** com o "por quê";
+  - [ ] Base da IA: editar o FIT, ver o Roberto mudar, **Restaurar padrão**;
+  - [ ] Marina em **ATENÇÃO** para mama; João em **ROTINA**.
+  - As fontes são locais: sem internet o visual tem que ficar igual.
+- [ ] Se o Windows perguntar sobre o firewall na primeira execução: **permitir o Node.js em rede privada** (para
+  celulares na mesma rede abrirem pelo IP que o `stand` imprime).
+- [ ] Se der `EPERM` ou `EBUSY`: `Ctrl+C`, fechar o VS Code nessa pasta e rodar de novo (o `stand` reseta o banco antes
+  de subir).
+- [ ] Ensaiar o **pitch de 30 s e de 3 min** (`pitch.md`) com cronômetro, e ler o `faq-banca.md`.
+- [ ] Ensaiar a demo do `roteiro-demo.md` pelo menos duas vezes, revezando quem clica e quem fala.
+- [ ] Abrir os `slides.pptx` no notebook (PowerPoint ou o visualizador) e conferir se nada saiu do lugar.
+
+## Material para levar
+
+- [ ] Notebook do stand + carregador.
+- [ ] Extensão/filtro de linha (tomada de evento costuma ser longe).
+- [ ] Mouse (a demo da Base da IA tem campos pequenos).
+- [ ] Celular com 4G para roteador (plano B se o Wi-Fi do evento falhar e alguém quiser o site online).
+- [ ] Banner (ou o plano B em A3) + fita dupla-face / fita crepe.
+- [ ] QR impresso em A4 extra para deixar na mesa.
+
+## Sábado 24, de manhã
+
+- [ ] Ligar o notebook, **Wi-Fi desligado**, `npm run stand` (as datas dos dados de exemplo ficam atualizadas).
+- [ ] Abrir no navegador, em abas:
+  1. `http://localhost:3000/teste?kiosk=1` (modo quiosque: volta sozinho para a capa depois de 2 min parado);
+  2. login da médica (`doctor@healthinpulse.dev` / `Doctor@123`, ou o card no login) com o Roberto aberto;
+  3. a Base da IA.
+- [ ] Abrir a URL do Render no celular uns minutos antes de abrir o stand, para ele "acordar".
+- [ ] Testar o QR do banner com dois celulares diferentes (Android e iPhone).
+- [ ] Brilho da tela no máximo; desligar notificações e atualização automática do Windows.
+
+## Durante a feira
+
+- [ ] Revezar: uma pessoa acompanha o visitante no teste, outra demonstra para quem quer ver a fundo.
+- [ ] **Depois de cada demonstração da Base da IA: "Restaurar padrão".** Se esquecer, o Roberto e os visitantes
+  passam a usar o número editado.
+- [ ] Se o notebook travar: `Ctrl+C` e `npm run stand` de novo (reseta o banco e volta tudo ao normal).
+- [ ] Se o Render cair: o teste continua no notebook; o QR vira "faça aqui no notebook".
+
+### Acolhimento: quando o resultado preocupar o visitante
+
+Câncer é tema sensível. Se alguém receber **ATENÇÃO** ou **INVESTIGAR**, ou ficar abalado:
+
+1. **Ouça primeiro.** Não brinque com o resultado e não diga "isso não é nada".
+2. **Explique o que é o número:** "É uma estimativa de risco com números de estudos, não um diagnóstico. Na maioria das
+   vezes a causa desses sinais não é câncer."
+3. **Indique o próximo passo:** "Vale conversar com um médico, levando o que apareceu aqui." Se a tela indicar um exame
+   de rastreamento, mostre qual.
+4. **Não interprete o caso pessoal** ("você tem", "deve ser"). Nenhum de nós é médico.
+5. Se a pessoa contar algo grave (sangramento intenso, falta de ar forte, dor no peito agora): oriente procurar
+   atendimento de urgência, sem pânico.
+6. Ofereça fazer o teste no **próprio celular**, pelo QR, se ela preferir privacidade. Nada é gravado.
+
+Sinais na tela: oncologia nunca aparece em vermelho (verde = ROTINA, âmbar = ATENÇÃO, laranja = INVESTIGAR), e
+todo resultado diz "não é diagnóstico".
+
+## Depois da feira
+
+- [ ] `Ctrl+C` no `stand`. Nada de visitante ficou gravado (o teste público não grava), mas não deixe o notebook
+  logado como a médica.
+- [ ] Anotar as perguntas da banca que não estavam no FAQ, para a próxima versão.
