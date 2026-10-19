@@ -9,7 +9,7 @@ const { validate } = require('../middlewares/validationMiddleware');
 
 // ─── Service ─────────────────────────────────────────────────
 
-const create = async ({ patientId, doctorId, scheduledAt, duration, notes }) => {
+const create = async ({ patientId, doctorId, scheduledAt, duration = 30, notes }) => {
   // Verifica vínculo
   const link = await prisma.doctorPatient.findUnique({
     where: { doctorId_patientId: { doctorId, patientId } },
@@ -135,6 +135,9 @@ const listFilters = ({ status, page, limit } = {}) => ({
   status: typeof status === 'string' ? status : undefined, page, limit,
 });
 
+const CREATE_FIELDS = ['doctorId', 'scheduledAt', 'duration', 'notes'];
+const pick = (obj, keys) => Object.fromEntries(keys.filter(k => obj?.[k] !== undefined).map(k => [k, obj[k]]));
+
 // ─── Router ──────────────────────────────────────────────────
 
 const router = Router();
@@ -147,14 +150,17 @@ router.post(
   [
     body('doctorId').isUUID(),
     body('scheduledAt').isISO8601(),
-    body('duration').optional().isInt({ min: 15, max: 120 }),
+    body('duration').optional().isInt({ min: 15, max: 120 }).toInt(),
+    body('notes').optional({ values: 'null' }).isString().isLength({ max: 1000 }),
   ],
   validate,
   async (req, res, next) => {
     try {
       const patient = await patientService.getProfile(req.user.id);
+      // Só os campos do agendamento vêm do corpo; o paciente é sempre o do
+      // token (antes `patientId` no corpo marcava consulta em nome de outro)
       res.status(201).json(
-        await create({ patientId: patient.id, ...req.body }),
+        await create({ ...pick(req.body, CREATE_FIELDS), patientId: patient.id }),
       );
     } catch (e) { next(e); }
   },
