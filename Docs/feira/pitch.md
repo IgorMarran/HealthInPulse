@@ -73,7 +73,7 @@ Marcação de tempo aproximada. Quem demonstra fica no notebook; quem fala, de f
 
 ### 2:25 a 2:45 · A base é editável
 
-*(Base da IA → teste de sangue oculto (FIT) → mudar o valor → voltar ao Roberto → "Restaurar padrão")*
+*(Base da IA → Simular em paciente: Roberto → LR+ do FIT de 13,17 para 2: o risco cai de 44,8% para 11,0% → Histórico → "Restaurar padrão")*
 
 > Se a médica discordar de um número, ela muda aqui. O resultado do Roberto muda na hora, e o sistema guarda quem
 > mudou, quando e de quanto para quanto. É a mesma ideia do Git, aplicada aos dados da IA.

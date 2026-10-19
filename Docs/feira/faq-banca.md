@@ -150,8 +150,8 @@ colorretal (LR− = (1 − 0,79) / (1 − 0,06) ≈ 0,22). Um "não" em pergunta
 
 ### 16. Vocês guardam os dados de quem faz o teste no stand?
 
-**Não.** O teste público (`/teste`) não tem cadastro, não grava no banco e não registra as respostas em log: o
-celular manda as respostas, o servidor calcula e devolve o resultado, e nada fica. Dado de saúde é **dado pessoal
+**Não.** O teste público (`/teste`) não tem cadastro, não grava no banco e não entra no log de requisições (o
+servidor ignora `/api/public/`): o celular manda as respostas, o servidor calcula e devolve o resultado, e nada fica. Dado de saúde é **dado pessoal
 sensível** pela LGPD (Lei 13.709/2018), então a decisão foi não coletar. As perguntas mais íntimas podem ser
 respondidas no próprio celular, pelo QR, sem ninguém do lado.
 
@@ -179,8 +179,8 @@ acadêmico, com aviso explícito de que não é diagnóstico.
 ### 20. Se a médica pode editar os números, alguém não pode estragar o modelo?
 
 No app, só o perfil **médico** edita, e toda edição vira uma versão com autor, data, valor antigo e novo. Existe
-"Restaurar padrão". No site público (Render) a edição fica **desligada** (`KB_EDIT=false`); só no notebook do stand ela
-está ligada para a demonstração. Num produto, a mudança passaria por revisão (dois médicos) antes de valer.
+"Restaurar padrão". A edição é **fechada por padrão**: só liga com `KB_EDIT=true` explícito (aceita também 1, yes, on). No site público (Render) fica **desligada** (`KB_EDIT=false`) e a tela mostra "só leitura"; só no notebook do stand (`npm run stand` liga) ela
+está ativa para a demonstração. Num produto, a mudança passaria por revisão (dois médicos) antes de valer.
 
 ---
 

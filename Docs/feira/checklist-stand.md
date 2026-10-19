@@ -15,7 +15,7 @@ Marque na ordem. O que depende de uma pessoa está com o nome de quem faz no pla
   - Plano B se a gráfica atrasar: imprimir o banner em folhas A3 (ou só o QR em A4) e colar num papel-cartão.
 - [ ] **Render no ar:** abrir `https://healthinpulse.onrender.com/teste` (ou a URL real) e fazer um teste completo.
   - `npm run smoke -- --url=https://SEU-APP.onrender.com` passa.
-  - No Render, `KB_EDIT=false` (a edição da base fica só no notebook), `DEMO_PASSWORD` e `OPENAI_API_KEY` vazios.
+  - No Render, `KB_EDIT=false` (a edição da base fica só no notebook; sem a variável também fica desligada, o padrão é fechado), `DEMO_PASSWORD` e `OPENAI_API_KEY` vazios.
   - Keep-warm ligado (UptimeRobot ou cron-job.org chamando `/health` a cada 10 min); no plano grátis o serviço dorme
     depois de 15 min sem acesso e demora ~1 min para acordar.
 
@@ -24,10 +24,10 @@ Marque na ordem. O que depende de uma pessoa está com o nome de quem faz no pla
 - [ ] Clone limpo **fora do OneDrive** (ex.: `C:\dev\HealthInPulse`), no **Prompt de Comando (cmd)** ou Git Bash,
   não no PowerShell.
 - [ ] `npm run setup` com internet (baixa o Prisma e as dependências).
-- [ ] **Desligar o Wi-Fi** e rodar `npm run stand`. Abrir `http://localhost:3000`:
+- [ ] **Desligar o Wi-Fi** e rodar `npm run stand` (ele imprime as URLs e os logins; `--check` só confere e encerra). Abrir `http://localhost:3000`:
   - [ ] `/teste` completo (capa → perfil → perguntas → resultado) em tela cheia (F11);
   - [ ] login da médica → Roberto em **INVESTIGAR** com o "por quê";
-  - [ ] Base da IA: editar o FIT, ver o Roberto mudar, **Restaurar padrão**;
+  - [ ] Base da IA: editar o **LR+ do FIT (13,17 → 2)**: o Roberto cai de 44,8% para 11,0% na simulação; depois **Restaurar padrão**;
   - [ ] Marina em **ATENÇÃO** para mama; João em **ROTINA**.
   - As fontes são locais: sem internet o visual tem que ficar igual.
 - [ ] Se o Windows perguntar sobre o firewall na primeira execução: **permitir o Node.js em rede privada** (para
@@ -51,8 +51,8 @@ Marque na ordem. O que depende de uma pessoa está com o nome de quem faz no pla
 
 - [ ] Ligar o notebook, **Wi-Fi desligado**, `npm run stand` (as datas dos dados de exemplo ficam atualizadas).
 - [ ] Abrir no navegador, em abas:
-  1. `http://localhost:3000/teste?kiosk=1` (modo quiosque: volta sozinho para a capa depois de 2 min parado);
-  2. login da médica (`doctor@healthinpulse.dev` / `Doctor@123`, ou o card no login) com o Roberto aberto;
+  1. `http://localhost:3000/teste?kiosk=1` (modo quiosque: volta sozinho para a capa depois de 120 s parado);
+  2. login da médica (`doctor@healthinpulse.dev` / `Doctor@123`, ou o card da Dra. Ana no login; o card do Roberto é o primeiro) com o Roberto aberto;
   3. a Base da IA.
 - [ ] Abrir a URL do Render no celular uns minutos antes de abrir o stand, para ele "acordar".
 - [ ] Testar o QR do banner com dois celulares diferentes (Android e iPhone).
@@ -63,7 +63,8 @@ Marque na ordem. O que depende de uma pessoa está com o nome de quem faz no pla
 - [ ] Revezar: uma pessoa acompanha o visitante no teste, outra demonstra para quem quer ver a fundo.
 - [ ] **Depois de cada demonstração da Base da IA: "Restaurar padrão".** Se esquecer, o Roberto e os visitantes
   passam a usar o número editado.
-- [ ] Se o notebook travar: `Ctrl+C` e `npm run stand` de novo (reseta o banco e volta tudo ao normal).
+- [ ] Se o notebook travar: `Ctrl+C` e `npm run stand` de novo (reseta o banco e volta tudo ao normal; `--skip-build` acelera, `--keep-db` mantém as edições da Base da IA, `--port=3001` se a porta estiver ocupada).
+- [ ] Se aparecer sessão antiga/tela estranha: o `/teste` é público e não usa token, mas abra-o num **perfil separado do navegador** (ou janela anônima), longe do login da médica.
 - [ ] Se o Render cair: o teste continua no notebook; o QR vira "faça aqui no notebook".
 
 ### Acolhimento: quando o resultado preocupar o visitante
