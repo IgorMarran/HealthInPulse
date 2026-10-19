@@ -71,10 +71,19 @@ const list = async ({ patientId, doctorId, status, page = 1, limit = 20 }) => {
   return { total, page, limit, items };
 };
 
-// Quem pode pôr a consulta em cada status (o frontend do médico usa os três)
-const STATUS_BY_ROLE = {
-  DOCTOR:  ['CONFIRMED', 'CANCELLED', 'COMPLETED'],
-  PATIENT: ['CANCELLED'],
+// Transições permitidas: papel → status atual → próximos status.
+// Status (String no schema): SCHEDULED (padrão), CONFIRMED, COMPLETED,
+// CANCELLED. COMPLETED e CANCELLED são finais. O paciente só cancela; o
+// médico confirma, conclui (só depois de confirmar) ou cancela.
+const TRANSITIONS = {
+  PATIENT: {
+    SCHEDULED: ['CANCELLED'],
+    CONFIRMED: ['CANCELLED'],
+  },
+  DOCTOR: {
+    SCHEDULED: ['CONFIRMED', 'CANCELLED'],
+    CONFIRMED: ['COMPLETED', 'CANCELLED'],
+  },
 };
 
 const updateStatus = async (appointmentId, actor, { status, notes }) => {
@@ -91,14 +100,19 @@ const updateStatus = async (appointmentId, actor, { status, notes }) => {
   const party = actor.role === 'DOCTOR' ? appt.doctor.userId : appt.patient.userId;
   if (party !== actor.id) throw Object.assign(new Error('Acesso negado'), { status: 403 });
 
-  // Só médico confirma/conclui; paciente só cancela
-  if (!(STATUS_BY_ROLE[actor.role] ?? []).includes(status)) {
-    throw Object.assign(new Error('Você não pode mudar a consulta para este status'), { status: 403 });
+  // Transição a partir do status atual (409: o estado atual não permite)
+  if (!(TRANSITIONS[actor.role]?.[appt.status] ?? []).includes(status)) {
+    throw Object.assign(
+      new Error(`Não é possível mudar a consulta de ${appt.status} para ${status}`),
+      { status: 409 },
+    );
   }
 
+  // Só o médico escreve em `notes` (o frontend do paciente não manda; se
+  // vier, é ignorado)
   const updated = await prisma.appointment.update({
     where: { id: appointmentId },
-    data:  { status, ...(notes ? { notes } : {}) },
+    data:  { status, ...(actor.role === 'DOCTOR' && notes ? { notes } : {}) },
     include: {
       patient: { select: { fullName: true } },
       doctor:  { select: { fullName: true } },
@@ -166,7 +180,10 @@ router.get('/doctor', authorize('DOCTOR'), async (req, res, next) => {
 router.patch(
   '/:id/status',
   authorize('DOCTOR', 'PATIENT'),
-  [body('status').isIn(['CONFIRMED', 'CANCELLED', 'COMPLETED'])],
+  [
+    body('status').isIn(['CONFIRMED', 'CANCELLED', 'COMPLETED']),
+    body('notes').optional({ values: 'null' }).isString().isLength({ max: 1000 }),
+  ],
   validate,
   async (req, res, next) => {
     try {
