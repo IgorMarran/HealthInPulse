@@ -95,4 +95,4 @@ Marcação de tempo aproximada. Quem demonstra fica no notebook; quem fala, de f
 >
 > **João**, 58 anos: nenhum sinal de câncer nos dados, categoria **ROTINA**. A IA indica o rastreamento de intestino
 > pela idade e, sobre o PSA, conversar com o médico, porque o Ministério da Saúde não recomenda o exame para todos os
-> homens sem sintomas. A IA também sabe dizer quando não há motivo para alarme.
+> homens sem sintomas. A IA também sabe dizer quando não há motivo para alarme de câncer.

@@ -8,6 +8,9 @@ Marque na ordem. O que depende de uma pessoa está com o nome de quem faz no pla
   - Antes de mandar, confira se a URL do QR é a do Render de verdade. Se mudou:
     `npm run qr -- https://SEU-APP.onrender.com/teste --pdf` (regera o `qr-teste.svg`, o texto da URL no banner e o
     PDF).
+  - Gere o PDF **com internet**: o banner baixa as fontes (Sora, DM Sans) do Google Fonts. Sem internet o Chrome
+    troca por outra fonte e o layout muda. Abra o PDF e confira visualmente: título em duas linhas, nada cortado,
+    rodapé inteiro.
   - Aponte a câmera do celular para o QR **no PDF aberto na tela** e confirme que abre o `/teste`.
   - Plano B se a gráfica atrasar: imprimir o banner em folhas A3 (ou só o QR em A4) e colar num papel-cartão.
 - [ ] **Render no ar:** abrir `https://healthinpulse.onrender.com/teste` (ou a URL real) e fazer um teste completo.
@@ -68,8 +71,8 @@ Marque na ordem. O que depende de uma pessoa está com o nome de quem faz no pla
 Câncer é tema sensível. Se alguém receber **ATENÇÃO** ou **INVESTIGAR**, ou ficar abalado:
 
 1. **Ouça primeiro.** Não brinque com o resultado e não diga "isso não é nada".
-2. **Explique o que é o número:** "É uma estimativa de risco com números de estudos, não um diagnóstico. Na maioria das
-   vezes a causa desses sinais não é câncer."
+2. **Explique o que é o número:** "É uma estimativa, não um diagnóstico; só uma avaliação médica diz o que é. Na faixa
+   de ATENÇÃO, e em muitos casos de INVESTIGAR, a causa não é câncer, mas só o médico confirma."
 3. **Indique o próximo passo:** "Vale conversar com um médico, levando o que apareceu aqui." Se a tela indicar um exame
    de rastreamento, mostre qual.
 4. **Não interprete o caso pessoal** ("você tem", "deve ser"). Nenhum de nós é médico.

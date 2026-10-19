@@ -41,7 +41,7 @@ e o app usa o simulador local no lugar.
 
 ### 4. Como a IA escolhe a próxima pergunta?
 
-Pela força da pergunta: quanto uma resposta "sim" mudaria o risco dos cânceres que valem para aquela pessoa,
+Pela força da pergunta: quanto uma resposta "sim" tipicamente mudaria o risco dos cânceres que valem para aquela pessoa,
 dividido pelo "custo" da pergunta. Ex.: para um homem de 60 anos, "sangue nas fezes" (LR ≈ 10 para colorretal) vem
 antes de "rouquidão" (LR ≈ 2,6 para pulmão). Pergunta sobre mama não aparece para homem, e próstata não aparece para
 mulher. Cada pergunta vem com o "por que estamos perguntando", em linguagem calma.
@@ -125,8 +125,8 @@ abdominal. Acima de 20%, a tela mostra "≥ 20%" e a categoria, que é o que imp
 
 - **Não é diagnóstico** e **não foi calibrado com dados reais** brasileiros.
 - **Pistas correlacionadas** inflam o risco (pergunta 12).
-- **Os LRs vêm de estudos ingleses de atenção primária** (CAPER, CPRD). Num visitante de feira, um "sim" tende a pesar
-  um pouco mais do que deveria.
+- **Boa parte dos LRs vem de estudos de atenção primária** (CAPER e CPRD, Reino Unido) e de meta-análises. Num
+  visitante de feira, um "sim" tende a pesar um pouco mais do que deveria.
 - **HPV e Papanicolau** foram validados para lesão precursora (CIN2+), não só para câncer invasivo.
 - **Próstata:** o PSA acha tumores que nunca dariam sintoma, o que infla tanto a incidência (o prior) quanto a força
   do sintoma urinário. Por isso a recomendação para esse caso é **conversar sobre o PSA**, não "câncer provável".
@@ -136,7 +136,7 @@ abdominal. Acima de 20%, a tela mostra "≥ 20%" e a categoria, que é o que imp
 ### 14. Os números de estudos estrangeiros servem para brasileiros?
 
 Em parte. O **ponto de partida** é brasileiro (INCA 2026 + GLOBOCAN Brasil), e é ele que mais pesa para quem não tem
-sintomas. A **força das pistas** (LR) é mais estável entre populações do que a incidência, porque compara doentes
+sintomas. A **força das pistas** (LR) tende a ser mais estável entre populações do que a incidência, porque compara doentes
 com não doentes, mas ainda assim vem de outro sistema de saúde. É a primeira coisa a recalibrar com dados reais.
 
 ### 15. Exame normal diminui o risco?
@@ -163,9 +163,11 @@ quem acessou.
 
 ### 18. O que acontece se o visitante tirar "INVESTIGAR"?
 
-A tela não usa vermelho (oncologia é verde, âmbar e laranja), diz "não é diagnóstico" e explica que **na maioria das
-vezes a causa não é câncer**. O próximo passo é procurar avaliação médica, sem urgência inventada. A equipe tem um
-roteiro de acolhimento (`checklist-stand.md`): ouvir, explicar o que é risco, não interpretar o caso pessoal.
+A tela não usa vermelho (oncologia é verde, âmbar e laranja) e diz "não é diagnóstico". A mensagem para o visitante
+é: **é uma estimativa, não um diagnóstico; só uma avaliação médica diz o que é.** Na faixa de ATENÇÃO, e em muitos
+casos de INVESTIGAR, a causa não é câncer, mas só o médico confirma. O próximo passo é procurar avaliação médica, sem
+urgência inventada. A equipe tem um roteiro de acolhimento (`checklist-stand.md`): ouvir, explicar o que é risco, não
+interpretar o caso pessoal.
 
 ### 19. Isso precisaria de registro na ANVISA?
 
