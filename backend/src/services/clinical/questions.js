@@ -112,8 +112,8 @@ const SYMPTOM_QUESTIONS = [
   q('cefaleia_pior_da_vida', 'Teve recentemente "a pior dor de cabeça da vida", de início súbito?', 'boolean', { cost: 1, redFlagProbe: true }),
 
   // ── PHQ-9 (likert 0–3)
-  phq9Q(S.PHQ9_HUMOR,        'Pouco interesse ou prazer em fazer as coisas?'),
-  phq9Q(S.PHQ9_ANEDONIA,     'Sente-se "para baixo", deprimido(a) ou sem esperança?'),
+  phq9Q(S.PHQ9_HUMOR,        'Sente-se "para baixo", deprimido(a) ou sem esperança?'),
+  phq9Q(S.PHQ9_ANEDONIA,     'Pouco interesse ou prazer em fazer as coisas?'),
   phq9Q(S.PHQ9_SONO,         'Dificuldade para pegar no sono, manter o sono ou dormir demais?'),
   phq9Q(S.PHQ9_FADIGA,       'Sente-se cansado(a) ou com pouca energia?'),
   phq9Q(S.PHQ9_APETITE,      'Falta de apetite ou comendo demais?'),
