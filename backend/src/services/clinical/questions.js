@@ -9,6 +9,22 @@
 
 const { S } = require('./matrix');
 const { evalWhen } = require('./kb/conditions');
+const { profileFields: ONCO_PROFILE_FIELDS = [] } = require('./data/oncology');
+
+// Mesmo formato dos campos acima (id, field, type, label, ...); campos
+// opcionais (nenhum é obrigatório). quitYears logo depois de packYears.
+function oncologyProfileFields() {
+  const order = ['quitYears', 'alcoholDosesWeek', 'familyHistoryCancer', 'papEmDia'];
+  return [...ONCO_PROFILE_FIELDS]
+    .sort((a, b) => (order.indexOf(a.id) + 1 || 99) - (order.indexOf(b.id) + 1 || 99))
+    .map((f) => {
+      const out = { id: f.id, field: f.field, type: f.type, label: f.label };
+      for (const k of ['help', 'options', 'min', 'max', 'step', 'default', 'showIf']) {
+        if (f[k] != null) out[k] = f[k];
+      }
+      return out;
+    });
+}
 
 // ─── Demografia (sempre coletada antes de tudo) ─────────────────────
 const DEMOGRAPHIC_QUESTIONS = [
@@ -26,6 +42,11 @@ const DEMOGRAPHIC_QUESTIONS = [
     min: 0, max: 100, step: 0.5,
     // showIf em JSON (kb/conditions.js): o mesmo `smoker === true || 'true' || 1` da v7
     showIf: [{ field: 'smoker', op: 'in', value: [true, 'true', 1] }] },
+  // Campos da fase oncológica (fatores de risco que entram no prior dos
+  // cânceres): quitYears, alcoholDosesWeek, familyHistoryCancer
+  // (multiselect) e papEmDia. A definição mora em data/oncology.js
+  // (profileFields), junto das regras que os usam.
+  ...oncologyProfileFields(),
 ];
 
 // ─── Perguntas vinculadas a sintomas (alimentam o motor) ────────────
@@ -205,6 +226,7 @@ const questionFromSymptom = (s) => ({
   options:   s.options ?? undefined,
   followUps: s.followUps ?? [],
   scaleTag:  s.scaleTag ?? undefined,
+  help:      s.help ?? undefined, // só as perguntas oncológicas têm
 });
 
 // Compat v7: candidatas do painel crônico com o kb montado do JS.

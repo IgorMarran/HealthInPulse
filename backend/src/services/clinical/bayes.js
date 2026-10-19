@@ -78,6 +78,12 @@ const shouldStop = (posteriors, askedCount, opts = {}) => {
   return { stop: false };
 };
 
+// Evidência com valor 0/1 (aceita o formato { value, weight })
+const isBinaryEvidence = (raw) => {
+  const v = raw != null && typeof raw === 'object' ? raw.value : raw;
+  return v === 0 || v === 1;
+};
+
 // ─── Efeito de uma regra de prior ───────────────────────────────────
 const applyEffect = (p, rule) => {
   switch (rule.effect) {
@@ -94,7 +100,12 @@ const applyEffect = (p, rule) => {
 // opts.categories: ['CRONICA'] / ['ONCOLOGICA'] / null (todas)
 // opts.correlations: pares [a, b, r] para a penalização de redundância
 //   (padrão: matrix.CORRELATIONS; ficam em código, fora do banco)
-const createEngine = (kb, { categories = null, correlations = CORRELATIONS } = {}) => {
+// opts.supersedes: { sintomaRelatado: achadoObjetivo }. Numa condição que
+//   tem likelihood para o achado objetivo, se a evidência traz esse achado
+//   (0 ou 1), o relatado não conta (entra no "por quê" com delta 0 e
+//   `supersededBy`). Evita contar a mesma perda de peso duas vezes. O
+//   motor crônico não usa (padrão {}), então o v7 não muda.
+const createEngine = (kb, { categories = null, correlations = CORRELATIONS, supersedes = {} } = {}) => {
   // Condições ativas da categoria, na ordem de sortOrder. A ordem importa:
   // é a ordem das chaves do posterior, da soma da entropia e do desempate.
   const conditions = kb.conditions
@@ -191,6 +202,14 @@ const createEngine = (kb, { categories = null, correlations = CORRELATIONS } = {
       const value  = typeof raw === 'object' ? raw.value  : raw;
       const weight = typeof raw === 'object' ? Math.max(0, raw.weight ?? 1) : 1;
       if (value == null || (value !== 0 && value !== 1)) continue;
+
+      const by = supersedes[sx];
+      if (by && lk.has(by) && isBinaryEvidence(evidence[by])) {
+        if (contributions) {
+          contributions.push({ symptomCode: sx, value, weight: 0, lr: 1, deltaLogOdds: 0, supersededBy: by });
+        }
+        continue;
+      }
 
       const pSx     = clamp01(def.pSx);
       const pNoSx   = clamp01(def.pNoSx);
