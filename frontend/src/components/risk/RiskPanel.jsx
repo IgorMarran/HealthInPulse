@@ -8,7 +8,7 @@
 // Props:
 //   load      () => Promise<{ data }>  (ex.: () => doctorService.getPatientRisk(id))
 //   deps      dependências do load (ex.: [patientId])
-//   audience  'doctor' (padrão) | 'visitor' (cards sem %; para a T9)
+//   audience  'doctor' (padrão) | 'visitor' (cards, crônicas e aviso sem %; para a T9)
 //   title     título da seção (opcional)
 import { useState } from 'react';
 import {
@@ -68,7 +68,7 @@ function BasedOn({ basedOn }) {
 }
 
 // Crônicas: barras como o Leaderboard da triagem (fecha por padrão)
-function ChronicList({ chronic }) {
+function ChronicList({ chronic, showPct = true }) {
   const [open, setOpen] = useState(false);
   if (!chronic?.conditions?.length) return null;
   const list = [...chronic.conditions].sort((a, b) => b.posterior - a.posterior);
@@ -90,7 +90,9 @@ function ChronicList({ chronic }) {
               <div className="w-32 h-1.5 bg-surface-100 rounded-full overflow-hidden">
                 <div className="h-full bg-brand-500" style={{ width: `${Math.round(h.posterior * 100)}%` }} />
               </div>
-              <span className="text-xs text-surface-500 w-10 text-right tabular-nums">{Math.round(h.posterior * 100)}%</span>
+              {showPct && (
+                <span className="text-xs text-surface-500 w-10 text-right tabular-nums">{Math.round(h.posterior * 100)}%</span>
+              )}
             </div>
           ))}
         </div>
@@ -202,9 +204,10 @@ export default function RiskPanel({ load, deps = [], audience = 'doctor', title 
         </div>
       </div>
 
-      <ChronicList chronic={data.chronic} />
+      <ChronicList chronic={data.chronic} showPct={audience === 'doctor'} />
 
-      <Disclaimer text={data.disclaimer} variant="inline" />
+      {/* O disclaimer da API fala de %: só para a médica */}
+      <Disclaimer audience={audience} text={audience === 'doctor' ? data.disclaimer : undefined} variant="inline" />
     </section>
   );
 }

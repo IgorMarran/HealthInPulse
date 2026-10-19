@@ -1,16 +1,25 @@
 // ─── Aviso "não é diagnóstico" ───────────────────────────────
-// Usado no teste público e no painel da médica. O texto vem da API quando
-// existe (`disclaimer` das respostas); senão, cai no padrão do público.
+// Usado no teste público, no resultado da triagem e no painel da médica.
+//   audience="visitor" (padrão) texto para leigo, SEM falar de porcentagem
+//                      (o visitante nunca vê %);
+//   audience="doctor"  menciona o % em 2 anos e o limiar de 3%.
+//   text               sobrescreve o padrão (ex.: o `disclaimer` da API do
+//                      /risk para a médica, ou o "nada é gravado" do /teste)
 //   variant="box"    caixa com ícone (padrão)
 //   variant="inline" uma linha discreta, para rodapé
 import { Info } from 'lucide-react';
 import clsx from 'clsx';
 
-export const DEFAULT_DISCLAIMER =
-  'Teste educativo de risco. Não é diagnóstico e não substitui uma consulta.';
+export const VISITOR_DISCLAIMER =
+  'Triagem educativa de risco. Não é diagnóstico e não substitui uma consulta: '
+  + 'os números são estimativas a partir de estudos publicados.';
+export const DOCTOR_DISCLAIMER =
+  'Triagem de risco com estimativas didáticas, não diagnóstico. Os percentuais são a chance '
+  + 'estimada de diagnóstico em 2 anos; o limiar para investigar é 3% (NICE NG12).';
+export const DEFAULT_DISCLAIMER = VISITOR_DISCLAIMER;
 
-export default function Disclaimer({ text, variant = 'box', className }) {
-  const body = text || DEFAULT_DISCLAIMER;
+export default function Disclaimer({ text, audience = 'visitor', variant = 'box', className }) {
+  const body = text || (audience === 'doctor' ? DOCTOR_DISCLAIMER : VISITOR_DISCLAIMER);
 
   if (variant === 'inline') {
     return (

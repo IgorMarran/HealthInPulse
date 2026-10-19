@@ -121,18 +121,42 @@ export function displayRelativeRisk(c) {
   return c.display.relativeRisk;
 }
 
-// Risco relativo para o VISITANTE. Regras (controlador):
+// Risco relativo para o VISITANTE. Decisões pelo valor BRUTO (não pelo
+// texto arredondado do motor: 1,96 não pode virar "2,0×" ao lado de Rotina):
 //   - INVESTIGAR: não mostra RR (a mensagem é procurar avaliação);
-//   - RR ≥ 1,2: número do motor, "2,2× a média";
-//   - RR < 1,2: sem número (0,2× não significa nada para o público):
-//     "dentro da média" (≥ 0,8) ou "abaixo da média".
-// Devolve { value: '2,2×' | null, phrase } ou null (não mostrar nada).
+//   - RR > 10: ">10×" em qualquer nível (o Naive Bayes exagera);
+//   - 1,2 ≤ RR ≤ 10: número truncado em 1 casa ("1,9×", "2,2×");
+//   - RR < 1,2: sem número: "dentro da média" (≥ 0,8) ou "abaixo da média".
+// Devolve { value: '2,2×' | null, phrase, above } ou null (não mostrar nada).
 export const RR_VISITOR_MIN = 1.2;
+export function formatVisitorRR(rr) {
+  if (rr == null || Number.isNaN(rr)) return null;
+  if (rr > RR_CAP) return `>${RR_CAP}×`;
+  return `${nf(Math.floor(rr * 10) / 10, 1)}×`;
+}
 export function visitorRelativeRisk(c) {
   const rr = c?.relativeRisk;
   if (rr == null || c.level === 'INVESTIGAR') return null;
-  if (rr >= RR_VISITOR_MIN) return { value: c.display?.relativeRisk ?? formatFactor(rr), phrase: 'acima da média' };
-  return { value: null, phrase: rr >= 0.8 ? 'dentro da média' : 'abaixo da média' };
+  if (rr >= RR_VISITOR_MIN) return { value: formatVisitorRR(rr), phrase: 'acima da média', above: true };
+  return { value: null, phrase: rr >= 0.8 ? 'dentro da média' : 'abaixo da média', above: false };
+}
+
+// ATENÇÃO pode vir só do risco absoluto (P ≥ 1%) com RR ≈ 1 (ex.: homem
+// de 70+ e próstata). Aí "acima da média" seria falso: o texto passa a
+// falar da idade. Usado no card e na manchete do resultado do visitante.
+export const ATTENTION_BY_AGE_TEXT = 'Na sua idade, a chance já pede atenção ao rastreamento.';
+export const attentionByRR = (c) => c?.level === 'ATENÇÃO' && (c.relativeRisk ?? 0) >= RR_VISITOR_MIN;
+
+// Manchete e texto do resultado do visitante, pelo nível geral e pelos cards
+export function visitorSummary(level, conditions = []) {
+  const lv = oncoLevel(level);
+  if (level === 'ATENÇÃO' && !conditions.some(attentionByRR)) {
+    return {
+      headline: 'Na sua idade, vale manter os exames em dia',
+      text: `${ATTENTION_BY_AGE_TEXT} Isso vem da idade, não das suas respostas, e não é diagnóstico.`,
+    };
+  }
+  return { headline: lv.headline, text: lv.visitor };
 }
 
 // ─── Explicação (contribuições do motor) ───────────────────

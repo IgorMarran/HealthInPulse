@@ -3,7 +3,7 @@
 // que, num 401, limpa o localStorage e manda para /login. O teste rápido
 // do stand não pode cair nisso, nem mexer na sessão de quem está logado.
 
-async function post(path, body) {
+async function post(path, body, { signal } = {}) {
   let res;
   try {
     res = await fetch(`/api/public${path}`, {
@@ -11,8 +11,10 @@ async function post(path, body) {
       headers:     { 'Content-Type': 'application/json' },
       credentials: 'omit',
       body:        JSON.stringify(body ?? {}),
+      signal,
     });
-  } catch {
+  } catch (e) {
+    if (e?.name === 'AbortError' || signal?.aborted) throw Object.assign(new Error('Tempo esgotado'), { status: 0, aborted: true });
     throw Object.assign(new Error('Sem conexão com o servidor. Confira a rede e tente de novo.'), { status: 0 });
   }
 
@@ -29,7 +31,8 @@ async function post(path, body) {
 export const publicApi = {
   // { profile?, answers? } → { stage: PROFILE | BLOCKED | QUESTION | RESULT, ... }
   // Sem estado: mande sempre o perfil e TODAS as respostas acumuladas.
-  quickTest: ({ profile, answers } = {}) => post('/quick-test', { profile, answers }),
+  // opts.signal: AbortController (tempo máximo / nova chamada cancela a velha)
+  quickTest: ({ profile, answers } = {}, opts) => post('/quick-test', { profile, answers }, opts),
 };
 
 export default publicApi;

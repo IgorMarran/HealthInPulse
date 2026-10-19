@@ -22,7 +22,7 @@ import clsx from 'clsx';
 import { publicApi } from '@/services/publicApi';
 import { PUBLIC_TEST_URL, KIOSK_IDLE_MS } from '@/config';
 import { isFieldVisible, visibleProfile } from '@/lib/conditions';
-import { oncoLevel, formatFactor } from '@/lib/risk';
+import { oncoLevel, formatFactor, visitorSummary } from '@/lib/risk';
 import ProfileField from '@/components/triage/ProfileField';
 import QuestionCard from '@/components/triage/QuestionCard';
 import ConditionRiskCard from '@/components/risk/ConditionRiskCard';
@@ -34,6 +34,12 @@ import { PERSONAS } from './personas';
 
 // Campos numéricos curtos dividem a linha; os de rótulo longo ocupam tudo
 const HALF_WIDTH = ['age', 'height', 'weight', 'packYears'];
+
+const CALL_TIMEOUT_MS = 20 * 1000;
+
+// Aviso do visitante (o da API fala de "porcentagens", que ele não vê)
+const QUICKTEST_DISCLAIMER = 'Teste educativo feito para a feira. Não é diagnóstico e não substitui '
+  + 'uma consulta: os números são estimativas a partir de estudos publicados. Nada do que você respondeu foi gravado.';
 
 export default function QuickTest() {
   const [params] = useSearchParams();
@@ -49,25 +55,51 @@ export default function QuickTest() {
   const [error, setError]     = useState(null);    // { message, fields }
   const [persona, setPersona] = useState(null);
 
+  // Geração: cada reset invalida as respostas da API ainda a caminho
+  // (ex.: o quiosque volta à capa enquanto uma chamada lenta termina).
+  const genRef   = useRef(0);
+  const abortRef = useRef(null);
+
   const reset = useCallback(() => {
+    genRef.current += 1;
+    abortRef.current?.abort();
     setStep('COVER'); setProfile({}); setAnswers({}); setOrder([]);
     setRes(null); setError(null); setPersona(null); setBusy(false);
   }, []);
 
   // Uma chamada à API. Devolve a resposta ou null (erro já mostrado).
+  // Tempo máximo de 20 s (o Render acorda devagar depois de parado);
+  // resposta de uma geração antiga é descartada.
   const call = async (body) => {
+    const gen = genRef.current;
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    const timer = setTimeout(() => ctrl.abort('timeout'), CALL_TIMEOUT_MS);
     setBusy(true); setError(null);
     try {
-      const data = await publicApi.quickTest(body);
+      const data = await publicApi.quickTest(body, { signal: ctrl.signal });
+      if (gen !== genRef.current) return null;
       setRes(data);
       if (data.stage === 'PROFILE') setSchema(data.schema);
       setStep(data.stage);
       return data;
     } catch (e) {
-      setError({ message: e.message, fields: e.fields ?? [] });
+      // Reset ou chamada mais nova cancelou esta: descarta em silêncio
+      if (gen !== genRef.current) return null;
+      if (ctrl.signal.aborted && ctrl.signal.reason !== 'timeout') return null;
+      const timedOut = ctrl.signal.aborted;
+      setError(timedOut
+        ? { message: 'O servidor demorou para responder (ele pode estar acordando). Toque de novo em alguns segundos.', fields: [] }
+        : { message: e.message, fields: e.fields ?? [] });
       return null;
     } finally {
-      setBusy(false);
+      clearTimeout(timer);
+      // Só a chamada vigente desliga o "ocupado"
+      if (abortRef.current === ctrl) {
+        abortRef.current = null;
+        if (gen === genRef.current) setBusy(false);
+      }
     }
   };
 
@@ -193,7 +225,7 @@ export default function QuickTest() {
 
       <footer className="border-t border-surface-200 bg-white">
         <div className="max-w-5xl mx-auto px-4 py-3">
-          <Disclaimer variant="inline" text="Teste educativo feito para a feira. Não é diagnóstico e não substitui uma consulta. Nada do que você responde é gravado." />
+          <Disclaimer variant="inline" audience="visitor" text="Teste educativo feito para a feira. Não é diagnóstico e não substitui uma consulta. Nada do que você responde é gravado." />
         </div>
       </footer>
     </div>
@@ -310,6 +342,7 @@ function ProfileStep({ schema, profile, setProfile, persona, busy, error, onSubm
 function Result({ res, persona, onRestart }) {
   const onco = res.oncology ?? {};
   const lv = oncoLevel(onco.level);
+  const summary = visitorSummary(onco.level, onco.conditions ?? []);
   const conditions = onco.conditions ?? [];
   const eligible = conditions.filter((c) => c.eligible);
   const ineligible = conditions.filter((c) => !c.eligible);
@@ -325,8 +358,8 @@ function Result({ res, persona, onRestart }) {
         'border-l-orange-500': onco.level === 'INVESTIGAR',
       })}>
         <span className={lv.badge}>{lv.label}</span>
-        <h1 className="font-display text-2xl sm:text-3xl font-bold text-surface-900 mt-3 leading-tight">{lv.headline}</h1>
-        <p className="text-surface-600 mt-2 max-w-prose leading-relaxed">{lv.visitor}</p>
+        <h1 className="font-display text-2xl sm:text-3xl font-bold text-surface-900 mt-3 leading-tight">{summary.headline}</h1>
+        <p className="text-surface-600 mt-2 max-w-prose leading-relaxed">{summary.text}</p>
         {res.redFlag && (
           <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex items-start gap-2.5">
             <AlertTriangle size={18} className="text-orange-600 shrink-0 mt-0.5" aria-hidden />
@@ -375,7 +408,7 @@ function Result({ res, persona, onRestart }) {
         </section>
       </div>
 
-      <Disclaimer text={res.disclaimer} />
+      <Disclaimer audience="visitor" text={QUICKTEST_DISCLAIMER} />
 
       <div className="flex flex-col-reverse gap-4 md:flex-row md:items-center md:justify-between">
         <div className="hidden md:flex items-center gap-4">

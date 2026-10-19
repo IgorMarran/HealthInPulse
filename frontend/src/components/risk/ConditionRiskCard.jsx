@@ -6,7 +6,8 @@
 //                          frequência natural ("~3 em 1.000"), sem %;
 //              'doctor'  → também o % em 2 anos ("estimativa didática"),
 //                          numa escala com os limiares de 1% e 3%.
-//              RR acima de 10× com INVESTIGAR aparece como ">10×".
+//              RR acima de 10× com INVESTIGAR aparece como ">10×" (médica);
+//              para o visitante, ">10×" em qualquer nível (lib/risk).
 //   explain    mostra o botão "Por quê?" com a RiskExplanation (padrão true)
 //   defaultOpen abre a explicação já de início
 // Acima de 20% o motor manda display.posterior = "≥20%" (capped).
@@ -14,7 +15,7 @@ import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import {
-  oncoLevel, logScale, formatPct, formatFactor, visitorRelativeRisk, displayRelativeRisk, ALERT_THRESHOLD,
+  oncoLevel, logScale, formatPct, formatFactor, visitorRelativeRisk, displayRelativeRisk, ATTENTION_BY_AGE_TEXT, ALERT_THRESHOLD,
 } from '@/lib/risk';
 import FrequencyDots from './FrequencyDots';
 import RiskExplanation from './RiskExplanation';
@@ -100,7 +101,8 @@ export default function ConditionRiskCard({ condition: c, audience = 'visitor', 
             <p className="text-sm text-surface-600">
               {vrr.value
                 ? <><strong className="text-surface-800 tabular-nums">{vrr.value} a média</strong> de pessoas da sua idade e sexo.</>
-                : <>Risco <strong className="text-surface-800">{vrr.phrase}</strong> para a sua idade e sexo.</>}
+                : <>Risco <strong className="text-surface-800">{vrr.phrase}</strong> para a sua idade e sexo.
+                    {c.level === 'ATENÇÃO' && <> {ATTENTION_BY_AGE_TEXT}</>}</>}
             </p>
           )}
           {c.level === 'INVESTIGAR' && (
