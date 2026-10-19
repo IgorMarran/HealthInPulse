@@ -71,7 +71,13 @@ const list = async ({ patientId, doctorId, status, page = 1, limit = 20 }) => {
   return { total, page, limit, items };
 };
 
-const updateStatus = async (appointmentId, actorId, { status, notes }) => {
+// Quem pode pôr a consulta em cada status (o frontend do médico usa os três)
+const STATUS_BY_ROLE = {
+  DOCTOR:  ['CONFIRMED', 'CANCELLED', 'COMPLETED'],
+  PATIENT: ['CANCELLED'],
+};
+
+const updateStatus = async (appointmentId, actor, { status, notes }) => {
   const appt = await prisma.appointment.findUnique({
     where:   { id: appointmentId },
     // userId de cada lado: as salas do socket são `user:<userId>`
@@ -79,7 +85,17 @@ const updateStatus = async (appointmentId, actorId, { status, notes }) => {
   });
   if (!appt) throw Object.assign(new Error('Consulta não encontrada'), { status: 404 });
 
-  // Só médico confirma/cancela; paciente só cancela
+  // Só as duas partes da consulta mexem nela, cada uma do seu lado: o
+  // médico pela agenda dele, o paciente pela consulta dele. Médico de outra
+  // agenda (ou paciente de outra consulta) leva 403, como o assertLink.
+  const party = actor.role === 'DOCTOR' ? appt.doctor.userId : appt.patient.userId;
+  if (party !== actor.id) throw Object.assign(new Error('Acesso negado'), { status: 403 });
+
+  // Só médico confirma/conclui; paciente só cancela
+  if (!(STATUS_BY_ROLE[actor.role] ?? []).includes(status)) {
+    throw Object.assign(new Error('Você não pode mudar a consulta para este status'), { status: 403 });
+  }
+
   const updated = await prisma.appointment.update({
     where: { id: appointmentId },
     data:  { status, ...(notes ? { notes } : {}) },
@@ -98,6 +114,12 @@ const updateStatus = async (appointmentId, actorId, { status, notes }) => {
 
   return updated;
 };
+
+// Filtros da listagem que vêm da query. patientId/doctorId nunca vêm de
+// fora: antes `?patientId=<outro>` trocava o dono da lista (IDOR).
+const listFilters = ({ status, page, limit } = {}) => ({
+  status: typeof status === 'string' ? status : undefined, page, limit,
+});
 
 // ─── Router ──────────────────────────────────────────────────
 
@@ -128,7 +150,7 @@ router.post(
 router.get('/my', authorize('PATIENT'), async (req, res, next) => {
   try {
     const patient = await patientService.getProfile(req.user.id);
-    res.json(await list({ patientId: patient.id, ...req.query }));
+    res.json(await list({ ...listFilters(req.query), patientId: patient.id }));
   } catch (e) { next(e); }
 });
 
@@ -136,7 +158,7 @@ router.get('/my', authorize('PATIENT'), async (req, res, next) => {
 router.get('/doctor', authorize('DOCTOR'), async (req, res, next) => {
   try {
     const doctor = await doctorService.getProfile(req.user.id);
-    res.json(await list({ doctorId: doctor.id, ...req.query }));
+    res.json(await list({ ...listFilters(req.query), doctorId: doctor.id }));
   } catch (e) { next(e); }
 });
 
@@ -148,7 +170,7 @@ router.patch(
   validate,
   async (req, res, next) => {
     try {
-      res.json(await updateStatus(req.params.id, req.user.id, req.body));
+      res.json(await updateStatus(req.params.id, req.user, req.body));
     } catch (e) { next(e); }
   },
 );
