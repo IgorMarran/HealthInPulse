@@ -86,6 +86,7 @@ test('exibição: acima de 20% vira "≥20%"; frequência natural e RR em texto'
   assert.equal(riskEngine.pct(0.2), '≥20%');
   assert.equal(riskEngine.pct(0.0227), '2,3%');
   assert.equal(riskEngine.pct(0.00227), '0,23%');
+  assert.equal(riskEngine.pct(0.00004), '<0,01%');
   assert.equal(riskEngine.naturalFrequency(0.003), '~3 em 1.000');
   assert.equal(riskEngine.naturalFrequency(0.0002), '~2 em 10.000');
   assert.equal(riskEngine.naturalFrequency(0.03), '~3 em 100');

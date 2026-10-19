@@ -89,6 +89,7 @@ const pct = (p) => {
   if (p == null) return null;
   if (p >= DISPLAY_CAP) return '≥20%';
   const x = p * 100;
+  if (x < 0.01) return '<0,01%';
   const digits = x < 1 ? 2 : 1;
   return `${x.toFixed(digits).replace('.', ',')}%`;
 };

@@ -13,6 +13,16 @@
 //   5. Em paralelo calcula STOP-BANG / PHQ-9 / FINDRISC / Framingham
 //      como âncoras de calibração
 //   6. Encerra quando posterior ≥ 80% OU atinge 18 perguntas
+//   7. Fase 2 (ONCO_PHASE_ENABLED): até 6 perguntas de câncer escolhidas
+//      pelo questionRunner (Σ|ln LR+|/custo, só cânceres elegíveis), e o
+//      finalize junta o risco oncológico (riskEngine.assess com exames e
+//      balança). Nível final = o maior entre crônico e oncológico.
+//
+// Estados (TriageAnswer.answers.status):
+//   COLLECT_PROFILE → INTERVIEW (crônica) → ONCO_INTERVIEW → COMPLETED
+//   (RED_FLAG interrompe em qualquer fase). Quem decide a próxima
+//   pergunta é `advance`; o buildResponse só monta o JSON. Assim a sessão
+//   nunca termina sem passar pelo finalize.
 //
 // O TriageAnswer.answers serializa o estado completo da sessão para que
 // /answer possa retomar entre requests sem in-memory state.
@@ -28,7 +38,17 @@ const scales    = require('./clinical/scales');
 const questions = require('./clinical/questions');
 const wearable  = require('./clinical/wearableEvidence');
 const kbRepository = require('./clinical/kb/kbRepository');
-const { ageFromDob, mapGender, computeBmi } = require('./clinical/profile');
+const riskEngine     = require('./clinical/riskEngine');
+const questionRunner = require('./clinical/questionRunner');
+const labEvidence    = require('./clinical/labEvidence');
+const { ageFromDob, mapGender, computeBmi, normalizeProfile } = require('./clinical/profile');
+
+// ─── Fase oncológica ───────────────────────────────────────────────
+// Desligar (false) volta à triagem só crônica, exatamente como a v7.
+const ONCO_PHASE_ENABLED  = true;
+const ONCO_PANEL          = 'ONCOLOGIA';
+const ONCO_MAX_QUESTIONS  = 6;
+const CHRONIC_MAX_QUESTIONS = 18;
 
 // ─── Base de conhecimento + engine ─────────────────────────────────
 // O kb vem do banco (kbRepository, em cache até a base ser editada). O
@@ -55,9 +75,17 @@ const getQuestions = async () => {
     mode: 'adaptive',
     demographic: questions.demographicSchema(),
     totalSymptoms: questions.SYMPTOM_QUESTIONS.length,
-    conditions: engine.kb.conditions
-      .filter(c => engine.conditionCodes.includes(c.code))
+    // na ordem do motor (sortOrder), não na ordem em que o kb veio
+    conditions: engine.conditionCodes
+      .map(code => engine.kb.conditions.find(c => c.code === code))
       .map(c => ({ code: c.code, label: c.label })),
+    oncologyEnabled: ONCO_PHASE_ENABLED,
+    oncologyConditions: ONCO_PHASE_ENABLED
+      ? engine.kb.conditions
+        .filter(c => c.category === 'ONCOLOGICA' && c.active !== false)
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+        .map(c => ({ code: c.code, label: c.label, sexFilter: c.sexFilter, minAge: c.minAge }))
+      : [],
   };
 };
 
@@ -72,13 +100,20 @@ const newSessionState = () => ({
   evidence:   {},          // evidência efetiva injetada no Bayes (sintomas + wearable)
   redFlag:    null,
   status:     'COLLECT_PROFILE',
+  oncoAsked:  [],          // perguntas feitas na fase 2 (câncer), em ordem
+  weightTrend: null,       // tendência da balança (perda_peso_objetiva)
 });
 
 const loadState = (triage) => {
   const persisted = parseJson(triage.answers, null);
-  if (persisted && persisted.version === 2) return persisted;
+  if (persisted && persisted.version === 2) {
+    persisted.oncoAsked ??= []; // sessões abertas antes da fase 2
+    return persisted;
+  }
   return newSessionState();
 };
+
+const isProfileComplete = (profile) => !!(profile.age != null && profile.sex && profile.bmi);
 
 const saveState = (triageId, state, extra = {}) =>
   prisma.triageAnswer.update({
@@ -100,6 +135,10 @@ const startTriage = async (patientId) => {
 
   const state = newSessionState();
   state.wearable = wearableSnap;
+  if (ONCO_PHASE_ENABLED) {
+    try { state.weightTrend = await wearable.collectWeightTrend(patientId); }
+    catch (e) { console.error('Tendência de peso indisponível:', e.message); }
+  }
   // Pré-preenche perfil com o que já temos cadastrado
   if (patient?.dateOfBirth) state.profile.age = ageFromDob(patient.dateOfBirth);
   if (patient?.gender) state.profile.sex = mapGender(patient.gender);
@@ -133,7 +172,10 @@ const answerTriage = async (patientId, triageId, payload) => {
   const state = loadState(triage);
 
   // ─── 1. Recebe demografia (lote inteiro de uma vez) ──────────────
-  if (state.status === 'COLLECT_PROFILE' && payload?.profile) {
+  // (também aceita reenvio enquanto o perfil estiver incompleto)
+  const profileOpen = state.status === 'COLLECT_PROFILE' ||
+    (state.status === 'INTERVIEW' && state.asked.length === 0 && !isProfileComplete(state.profile));
+  if (profileOpen && payload?.profile) {
     Object.assign(state.profile, payload.profile);
     state.profile.bmi = state.profile.bmi
       || computeBmi(state.profile.height, state.profile.weight);
@@ -142,9 +184,12 @@ const answerTriage = async (patientId, triageId, payload) => {
     state.evidence = wearable.toBayesianEvidence(state.wearable);
   }
 
-  // ─── 2. Recebe resposta a um sintoma ─────────────────────────────
-  if (state.status === 'INTERVIEW' && payload?.symptom != null) {
-    const qDef = questions.getQuestionForSymptom(payload.symptom) || followUpDef(payload.symptom);
+  // ─── 2. Recebe resposta a um sintoma (fase crônica ou oncológica) ─
+  const interviewing = state.status === 'INTERVIEW' || state.status === 'ONCO_INTERVIEW';
+  if (interviewing && payload?.symptom != null) {
+    const qDef = questions.getQuestionForSymptom(payload.symptom)
+      || await kbQuestionDef(payload.symptom)
+      || followUpDef(payload.symptom);
     const rawVal = payload.value;
     state.rawAnswers[payload.symptom] = rawVal;
 
@@ -157,7 +202,11 @@ const answerTriage = async (patientId, triageId, payload) => {
         state.evidence[payload.symptom] = bin;
       }
       state.answers[payload.symptom] = bin;
-      if (!state.asked.includes(payload.symptom)) state.asked.push(payload.symptom);
+      if (state.status === 'ONCO_INTERVIEW') {
+        if (!state.oncoAsked.includes(payload.symptom)) state.oncoAsked.push(payload.symptom);
+      } else if (!state.asked.includes(payload.symptom)) {
+        state.asked.push(payload.symptom);
+      }
     }
 
     // Follow-ups (se a pergunta principal dispara filhos)
@@ -185,14 +234,36 @@ const answerTriage = async (patientId, triageId, payload) => {
     return buildResponse(triage.id, state, { completed: true });
   }
 
-  // ─── 4. Condição de parada por confiança/limite ──────────────────
-  const engine = await getEngine();
-  const post = engine.computePosterior(state.evidence, state.profile);
-  const stop = engine.shouldStop(post, state.asked.length, {
-    maxQuestions: 18, minQuestions: 6, confidenceCutoff: 0.80,
-  });
+  // ─── 4. Próxima pergunta, próxima fase ou fim ────────────────────
+  return advance(triage, state, patientId);
+};
 
-  if (stop.stop && state.status === 'INTERVIEW') {
+// ─── Máquina de estados ────────────────────────────────────────────
+// INTERVIEW: pergunta crônica até parar (confiança ≥ 80% ou 18
+// perguntas, mínimo 6) ou acabar a lista. Depois ONCO_INTERVIEW: até 6
+// perguntas de câncer; quando o seletor não tem mais nada útil, finalize.
+const advance = async (triage, state, patientId) => {
+  if (state.status === 'INTERVIEW' && isProfileComplete(state.profile)) {
+    const next = await nextChronicQuestion(state);
+    if (next) {
+      await saveState(triage.id, state);
+      return buildResponse(triage.id, state, { next });
+    }
+    if (ONCO_PHASE_ENABLED) {
+      state.status = 'ONCO_INTERVIEW';
+    } else {
+      state.status = 'COMPLETED';
+      await finalize(triage, state, patientId);
+      return buildResponse(triage.id, state, { completed: true });
+    }
+  }
+
+  if (state.status === 'ONCO_INTERVIEW') {
+    const next = await nextOncologyQuestion(state);
+    if (next) {
+      await saveState(triage.id, state);
+      return buildResponse(triage.id, state, { next });
+    }
     state.status = 'COMPLETED';
     await finalize(triage, state, patientId);
     return buildResponse(triage.id, state, { completed: true });
@@ -200,6 +271,86 @@ const answerTriage = async (patientId, triageId, payload) => {
 
   await saveState(triage.id, state);
   return buildResponse(triage.id, state, {});
+};
+
+// Fase crônica: mesma conta da v7 (parada + IG ponderado)
+const nextChronicQuestion = async (state) => {
+  const engine  = await getEngine();
+  const profile = state.profile;
+  const post    = engine.computePosterior(state.evidence, profile);
+  const stop    = engine.shouldStop(post, state.asked.length, {
+    maxQuestions: CHRONIC_MAX_QUESTIONS, minQuestions: 6, confidenceCutoff: 0.80,
+  });
+  if (stop.stop) return null;
+
+  const candidates = questions.candidatesFor(engine.kb, profile, CHRONIC_PANEL);
+  const next = engine.selectNextSymptom(candidates, state.evidence, profile, { targetThreshold: 0.5 });
+  if (!next) return null;
+  const ranking = engine.classifyRisk(post).ranking;
+  return {
+    phase:       CHRONIC_PANEL,
+    question:    next.question,
+    explanation: explainPick(next, ranking[0]),
+    reason:      null,
+    leaderboard: ranking.slice(0, 3),
+    progress:    { asked: state.asked.length, max: CHRONIC_MAX_QUESTIONS },
+  };
+};
+
+// Fase oncológica: seletor próprio (a entropia global ignoraria P ≈ 0,2%)
+const nextOncologyQuestion = async (state) => {
+  const kb = await getKb();
+  const next = questionRunner.next(kb, {
+    profile:    state.profile,
+    answers:    state.answers,
+    panel:      ONCO_PANEL,
+    max:        ONCO_MAX_QUESTIONS,
+    askedCount: state.oncoAsked.length,
+    evidence:   state.weightTrend?.evidence ?? {}, // balança já respondeu "perdeu peso?"
+  });
+  if (!next) return null;
+  return {
+    phase:       ONCO_PANEL,
+    question:    next.question,
+    explanation: null, // o "IG / foco" da fase crônica não se aplica
+    reason:      next.reason,
+    targets:     next.targets.map(t => ({ code: t.code, label: t.label })),
+    leaderboard: [],   // sem % de câncer ao vivo durante as perguntas
+    progress:    { asked: state.oncoAsked.length, max: ONCO_MAX_QUESTIONS },
+  };
+};
+
+// Pergunta da base (oncologia) que não está em questions.js
+const kbQuestionDef = async (code) => {
+  const kb = await getKb();
+  const s = kb.symptoms.find(x => x.code === code && x.kind === 'QUESTION');
+  return s ? { type: s.type, binaryThreshold: s.binaryThreshold, followUps: s.followUps ?? [] } : null;
+};
+
+// Risco oncológico no fim da triagem: respostas + exames + balança
+const assessOncology = async (patientId, state) => {
+  const kb = await getKb();
+  const profile = normalizeProfile(state.profile);
+  const labs = await labEvidence.collectFromDatabase(kb, patientId, { profile });
+  const wearableEvidence = {
+    ...wearable.toBayesianEvidence(state.wearable),
+    ...(state.weightTrend?.evidence ?? {}),
+  };
+  const a = riskEngine.assess(kb, {
+    profile, answers: state.answers, labEvidence: labs, wearableEvidence, wearable: state.wearable,
+  });
+  const t = state.weightTrend;
+  return {
+    kbVersion:  a.kbVersion,
+    level:      a.oncologyLevel,     // ROTINA / ATENÇÃO / INVESTIGAR
+    riskLevel:  a.oncologyRiskLevel, // LOW / MODERATE / HIGH
+    conditions: a.oncology,
+    screening:  a.screening,
+    modifiable: a.modifiable,
+    labs:       labs.items,
+    weightTrend: t?.hasData ? { summary: t.summary, dropPct: t.dropPct, days: t.days, lost: t.lost } : null,
+    asked:      state.oncoAsked,
+  };
 };
 
 // ─── Finalizadores ─────────────────────────────────────────────────
@@ -222,8 +373,20 @@ const finalize = async (triage, state, patientId) => {
   if (computedScales.findrisc.risk === 'VERY_HIGH' && rank(level) < rank('HIGH'))  level = 'HIGH';
   if (computedScales.framingham.risk === 'HIGH'  && rank(level) < rank('HIGH'))    level = 'HIGH';
 
-  const summary = buildSummary(state, verdict.ranking, computedScales);
-  const suggestions = buildSuggestions(level, verdict.ranking, computedScales, state.wearable);
+  // Fase 2: risco oncológico. ROTINA não sobe o nível; ATENÇÃO sobe até
+  // MODERATE e INVESTIGAR até HIGH (o maior entre crônico e oncológico).
+  let oncology = null;
+  if (ONCO_PHASE_ENABLED) {
+    try { oncology = await assessOncology(patientId, state); }
+    catch (e) { console.error('Erro no risco oncológico:', e.message); }
+  }
+  if (oncology && oncology.level !== riskEngine.LEVEL.ROTINA && rank(level) < rank(oncology.riskLevel)) {
+    level = oncology.riskLevel;
+  }
+  const investigate = (oncology?.conditions ?? []).filter(c => c.level === riskEngine.LEVEL.INVESTIGAR);
+
+  const summary = buildSummary(state, verdict.ranking, computedScales, oncology);
+  const suggestions = buildSuggestions(level, verdict.ranking, computedScales, state.wearable, oncology);
 
   state.result = {
     riskLevel: level,
@@ -233,6 +396,7 @@ const finalize = async (triage, state, patientId) => {
     scales:    computedScales,
     summary,
     suggestions,
+    oncology,
   };
 
   await saveState(triage.id, state, {
@@ -261,7 +425,30 @@ const finalize = async (triage, state, patientId) => {
     );
   } catch (e) { console.error('Erro ao gerar metas:', e.message); }
 
-  await emitCompleted(patientId, triage.id, level, report.id);
+  if (investigate.length) await notifyDoctors(patientId, triage.id, investigate);
+  await emitCompleted(patientId, triage.id, level, report.id, false,
+    investigate.length ? { oncology: investigate.map(c => c.code) } : {});
+};
+
+// Câncer em INVESTIGAR: avisa os médicos vinculados (notificação + socket)
+const notifyDoctors = async (patientId, triageId, conditions) => {
+  try {
+    const { send } = require('../routes/notificationRoutes'); // tardio: rotas carregam middlewares
+    const [patient, links] = await Promise.all([
+      prisma.patient.findUnique({ where: { id: patientId }, select: { fullName: true } }),
+      prisma.doctorPatient.findMany({ where: { patientId }, include: { doctor: { select: { userId: true } } } }),
+    ]);
+    const labels = conditions.map(c => c.label.toLowerCase()).join(', ');
+    for (const link of links) {
+      await send({
+        userId:   link.doctor.userId,
+        type:     'ALERT',
+        title:    'Triagem: sinais para investigar',
+        message:  `${patient?.fullName ?? 'Paciente'}: ${labels} acima do limiar de 3% (triagem de risco, não diagnóstico).`,
+        metadata: { patientId, triageId, oncology: conditions.map(c => c.code) },
+      });
+    }
+  } catch (e) { console.error('Erro ao notificar médico:', e.message); }
 };
 
 const finalizeWithRedFlag = async (triage, state, patientId) => {
@@ -303,19 +490,24 @@ const finalizeWithRedFlag = async (triage, state, patientId) => {
 };
 
 // ─── Construção da resposta para o frontend ────────────────────────
+// Só monta o JSON: quem escolhe a pergunta é o `advance` (extra.next).
+//   PROFILE  { triageId, stage, status, profile, schema, wearableSummary, hasWearable, progress }
+//   QUESTION { triageId, stage, status, phase: 'CRONICA'|'ONCOLOGIA', question, explanation,
+//              reason, targets?, progress, leaderboard, wearableSummary }
+//   RESULT   { triageId, stage, status, profile, result (com result.oncology), redFlag,
+//              wearableSummary, progress }
 const buildResponse = async (triageId, state, extra = {}) => {
-  const profileComplete = !!(state.profile.age != null && state.profile.sex && state.profile.bmi);
-
   // Etapa 1 — perfil
-  if (state.status === 'COLLECT_PROFILE' || !profileComplete) {
+  if (state.status === 'COLLECT_PROFILE' || !isProfileComplete(state.profile)) {
     return {
       triageId,
       stage:      'PROFILE',
+      status:     state.status,
       profile:    state.profile,
       schema:     questions.demographicSchema(),
       wearableSummary: wearable.summarizeForPatient(state.wearable),
       hasWearable: !!state.wearable?.hasData,
-      progress: { asked: 0, max: 18 },
+      progress: { asked: 0, max: CHRONIC_MAX_QUESTIONS },
     };
   }
 
@@ -324,36 +516,33 @@ const buildResponse = async (triageId, state, extra = {}) => {
     return {
       triageId,
       stage: 'RESULT',
+      status: state.status,
       profile: state.profile,
       result: state.result,
       redFlag: state.redFlag,
       wearableSummary: wearable.summarizeForPatient(state.wearable),
-      progress: { asked: state.asked.length, max: 18 },
+      progress: { asked: state.asked.length, max: CHRONIC_MAX_QUESTIONS },
     };
   }
 
-  // Etapa de pergunta — calcula a próxima
-  const engine     = await getEngine();
-  const profile    = state.profile;
-  const candidates = questions.candidatesFor(engine.kb, profile, CHRONIC_PANEL);
-  const next = engine.selectNextSymptom(candidates, state.evidence, profile, { targetThreshold: 0.5 });
-
-  const post   = engine.computePosterior(state.evidence, profile);
-  const ranking = engine.classifyRisk(post).ranking;
-
+  // Etapa de pergunta (a próxima já foi escolhida pelo advance)
+  const next = extra.next;
   if (!next) {
-    // Não tem mais o que perguntar — força fechamento
-    state.status = 'COMPLETED';
-    return { triageId, stage: 'RESULT', profile, progress: { asked: state.asked.length, max: 18 } };
+    // Não deveria acontecer: o advance sempre manda a pergunta ou finaliza
+    return { triageId, stage: 'RESULT', status: state.status, profile: state.profile,
+      progress: { asked: state.asked.length, max: CHRONIC_MAX_QUESTIONS } };
   }
-
   return {
     triageId,
     stage: 'QUESTION',
+    status: state.status,
+    phase: next.phase,
     question: next.question,
-    explanation: explainPick(next, ranking[0]),
-    progress: { asked: state.asked.length, max: 18 },
-    leaderboard: ranking.slice(0, 3),
+    explanation: next.explanation,
+    reason: next.reason,
+    ...(next.targets ? { targets: next.targets } : {}),
+    progress: next.progress,
+    leaderboard: next.leaderboard,
     wearableSummary: wearable.summarizeForPatient(state.wearable),
   };
 };
@@ -361,7 +550,7 @@ const buildResponse = async (triageId, state, extra = {}) => {
 // ─── Helpers de finalização ────────────────────────────────────────
 const rank = (level) => ({ INCONCLUSIVE: 0, LOW: 1, MODERATE: 2, HIGH: 3, CRITICAL: 4 }[level] ?? 0);
 
-const buildSummary = (state, ranking, computedScales) => {
+const buildSummary = (state, ranking, computedScales, oncology = null) => {
   const top = ranking[0];
   const wearLine = (state.wearable?.hasData ? wearable.summarizeForPatient(state.wearable) : [])
     .map(l => `- ${l}`).join('\n') || '- Sem dados recentes da pulseira';
@@ -377,10 +566,30 @@ const buildSummary = (state, ranking, computedScales) => {
     `- PHQ-9: ${computedScales.phq9.score}/27 (${computedScales.phq9.severity})`,
     `- FINDRISC: ${computedScales.findrisc.score}/26 (${computedScales.findrisc.risk}) — ${(computedScales.findrisc.prob10y * 100).toFixed(0)}% em 10 anos`,
     `- Framingham: ${(computedScales.framingham.prob10y * 100).toFixed(0)}% risco CV em 10 anos (${computedScales.framingham.risk})`,
+    ...oncologySummaryLines(oncology),
   ].join('\n');
 };
 
-const buildSuggestions = (level, ranking, computedScales, _wearableSnap) => {
+// Linhas do resumo para a parte de câncer (linguagem calma)
+const oncologySummaryLines = (oncology) => {
+  if (!oncology) return [];
+  const eligible = oncology.conditions.filter(c => c.eligible);
+  const lines = ['', '**Câncer (triagem de risco, não diagnóstico):**'];
+  if (!eligible.length) lines.push('- Nenhum dos 5 cânceres avaliados se aplica à sua idade ainda.');
+  for (const c of eligible) {
+    const what = c.level === 'INVESTIGAR' ? 'sinais que pedem avaliação médica'
+      : c.level === 'ATENÇÃO' ? 'vale conversar com o médico'
+      : 'sem sinal de alerta';
+    // risco relativo só fora do INVESTIGAR ("111× a média" assusta e o
+    // naive Bayes exagera com sinais correlacionados)
+    const rr = c.level === 'INVESTIGAR' ? '' : ` (${c.display.relativeRisk} a média da sua idade)`;
+    lines.push(`- ${c.label}: ${c.level} — ${what}${rr}`);
+  }
+  if (oncology.weightTrend?.summary) lines.push(`- ${oncology.weightTrend.summary}`);
+  return lines;
+};
+
+const buildSuggestions = (level, ranking, computedScales, _wearableSnap, oncology = null) => {
   const out = [];
   const top = ranking[0];
 
@@ -404,6 +613,16 @@ const buildSuggestions = (level, ranking, computedScales, _wearableSnap) => {
   }
   if (computedScales.framingham.risk === 'HIGH') {
     out.push({ type: 'exam', text: 'Solicitar perfil lipídico + ECG (Framingham > 20% em 10 anos)' });
+  }
+  for (const c of oncology?.conditions ?? []) {
+    if (c.level === 'INVESTIGAR') {
+      out.push({ type: 'action', text: `Procurar avaliação médica sobre ${c.label.toLowerCase()}: os sinais pedem exames (não é diagnóstico)` });
+    }
+  }
+  for (const s of oncology?.screening ?? []) {
+    if (s.investigate) continue;
+    if (s.status === 'INDICADO_AGORA') out.push({ type: 'exam', text: `Rastreamento: ${s.exam} (${s.conditionLabel.toLowerCase()})` });
+    if (s.status === 'DECISAO_COMPARTILHADA') out.push({ type: 'info', text: `Conversar com o médico sobre ${s.exam} (${s.conditionLabel.toLowerCase()})` });
   }
   return out;
 };
@@ -435,7 +654,7 @@ const binarizeFallback = (raw) => {
 
 // A sala do socket é por usuário (`user:<userId>`, ver config/socket.js);
 // patientId é o id do Patient, então busca o userId dele.
-const emitCompleted = async (patientId, triageId, riskLevel, reportId, isRedFlag = false) => {
+const emitCompleted = async (patientId, triageId, riskLevel, reportId, isRedFlag = false, extra = {}) => {
   try {
     const io = getIO();
     const patient = await prisma.patient.findUnique({
@@ -447,7 +666,7 @@ const emitCompleted = async (patientId, triageId, riskLevel, reportId, isRedFlag
       });
     }
     if (['HIGH', 'CRITICAL'].includes(riskLevel)) {
-      io.to('doctors').emit('triage:alert', { patientId, riskLevel, triageId, isRedFlag });
+      io.to('doctors').emit('triage:alert', { patientId, riskLevel, triageId, isRedFlag, ...extra });
     }
   } catch (_) {}
 };
@@ -479,6 +698,7 @@ const getTriageById = async (triageId, patientId) => {
 };
 
 module.exports = {
+  ONCO_PHASE_ENABLED,
   getQuestions,
   startTriage,
   answerTriage,
