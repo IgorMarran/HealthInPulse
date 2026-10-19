@@ -10,6 +10,92 @@ const lerp  = (a, b, t) => a + (b - a) * t;
 const noise = (amp) => (Math.random() - 0.5) * 2 * amp;
 const round = (v, d = 0) => Number(v.toFixed(d));
 
+// Leituras de `days` dias até hoje, `perDay` por dia, espaçadas de
+// `stepHours` horas: build(recordedAt, diasAtrás, índiceNoDia) → linha.
+const everyDay = (days, perDay, stepHours, build) => {
+  const rows = [];
+  for (let i = days - 1; i >= 0; i--) {
+    for (let s = 0; s < perDay; s++) {
+      rows.push(build(new Date(Date.now() - i * DAY + s * stepHours * HOUR), i, s));
+    }
+  }
+  return rows;
+};
+
+// ─── Triagem pelo motor ───────────────────────────────────────────
+// Os serviços do app usam o client de config/database. No seed, eles
+// recebem o client do seed: uma conexão só com o SQLite e sem o log de
+// cada query (o .env de desenvolvimento liga esse log).
+const loadTriageService = (client) => {
+  const dbPath = require.resolve('../config/database');
+  if (!require.cache[dbPath]) {
+    require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: client };
+  }
+  return require('../services/triageService');
+};
+
+// Resposta padrão de quem não tem o sintoma
+const noAnswer = (question) => (question.type === 'likert' ? 0 : false);
+
+// Faz a triagem inteira pela API interna, como o frontend faria:
+// perfil → perguntas crônicas → perguntas de câncer → resultado.
+//   answers  { sintoma: resposta } do roteiro; o resto é "não"
+//   unknown  sintomas da fase oncológica que a pessoa deixou em "não sei"
+//            (a chave fica nas respostas com null: o motor ignora e o
+//            seletor não pergunta de novo, como no teste público)
+//   daysAgo  quando a triagem aconteceu (data da triagem e do AiReport)
+const runTriage = async (triageService, patientId, { profile, answers = {}, unknown = [], daysAgo = 0 }) => {
+  let res = await triageService.startTriage(patientId);
+  const triageId = res.triageId;
+  res = await triageService.answerTriage(patientId, triageId, { profile });
+
+  for (let guard = 0; res.stage === 'QUESTION'; guard++) {
+    if (guard > 60) throw new Error('Seed: a triagem não terminou em 60 passos');
+    const code = res.question.symptom ?? res.question.id;
+
+    if (unknown.includes(code)) {
+      if (res.status !== 'ONCO_INTERVIEW') throw new Error(`Seed: "não sei" só na fase oncológica (${code})`);
+      const triage = await prisma.triageAnswer.findUnique({ where: { id: triageId } });
+      const state = JSON.parse(triage.answers);
+      state.answers[code] = null;
+      state.rawAnswers[code] = null;
+      res = await triageService.advance(triage, state, patientId);
+      continue;
+    }
+
+    const value = code in answers ? answers[code] : noAnswer(res.question);
+    // Follow-ups de quem disse "sim" (ex.: perda de peso → suor noturno): "não"
+    const followUps = value === true
+      ? (res.question.followUps ?? []).map(fu => ({ id: fu.id, value: answers[fu.id] ?? false }))
+      : undefined;
+    res = await triageService.answerTriage(patientId, triageId, { symptom: code, value, followUps });
+  }
+  if (res.stage !== 'RESULT' || !res.result) {
+    throw new Error(`Seed: triagem terminou em ${res.stage}/${res.status}, sem resultado`);
+  }
+
+  // Data da triagem no passado (a história aconteceu antes da feira)
+  const finishedAt = new Date(Date.now() - daysAgo * DAY);
+  await prisma.triageAnswer.update({
+    where: { id: triageId },
+    data:  { startedAt: new Date(finishedAt - 8 * 60000), finishedAt },
+  });
+  await prisma.aiReport.updateMany({ where: { triageId }, data: { generatedAt: finishedAt } });
+  await prisma.notification.updateMany({ where: { metadata: { contains: triageId } }, data: { createdAt: finishedAt } });
+  return res;
+};
+
+// O seed falha alto se a história mudou (ex.: um número da base revisado
+// tirou o Roberto de INVESTIGAR): melhor descobrir aqui que no stand.
+const expectOncology = (name, res, expected) => {
+  const got = Object.fromEntries((res.result.oncology?.conditions ?? []).map(c => [c.code, c.level]));
+  for (const [code, level] of Object.entries(expected)) {
+    if (got[code] !== level) {
+      throw new Error(`Seed: ${name} deveria ter ${code} em ${level}, veio ${got[code] ?? 'nada'}`);
+    }
+  }
+};
+
 async function main() {
   console.log('🌱 Iniciando seed...');
 
@@ -30,6 +116,7 @@ async function main() {
           'patient@healthinpulse.dev', // Carlos (legado)
           'joao@healthinpulse.dev',
           'marina@healthinpulse.dev',
+          'roberto@healthinpulse.dev',
         ],
       },
     },
@@ -87,24 +174,19 @@ async function main() {
   await prisma.doctorPatient.create({ data: { doctorId, patientId: joaoId } });
 
   // 30 dias de leituras "ruim" do João (HAS + DM2 descompensados)
-  for (let i = 29; i >= 0; i--) {
-    for (let s = 0; s < 2; s++) {
-      const recordedAt = new Date(Date.now() - i * DAY + s * 10 * HOUR);
-      await prisma.vitalSign.create({
-        data: {
-          patientId: joaoId,
-          heartRate:   round(94  + noise(4)),
-          systolic:    round(146 + noise(6)),
-          diastolic:   round(92  + noise(4)),
-          oxygenSat:   round(93.5 + noise(0.8), 1),
-          temperature: round(36.8 + noise(0.2), 1),
-          glucose:     round(184 + noise(12)),
-          source:      'wearable',
-          recordedAt,
-        },
-      });
-    }
-  }
+  await prisma.vitalSign.createMany({
+    data: everyDay(30, 2, 10, (recordedAt) => ({
+      patientId: joaoId,
+      heartRate:   round(94  + noise(4)),
+      systolic:    round(146 + noise(6)),
+      diastolic:   round(92  + noise(4)),
+      oxygenSat:   round(93.5 + noise(0.8), 1),
+      temperature: round(36.8 + noise(0.2), 1),
+      glucose:     round(184 + noise(12)),
+      source:      'wearable',
+      recordedAt,
+    })),
+  });
 
   // Exames do João
   const examMet = await prisma.exam.create({
@@ -305,31 +387,23 @@ Recomenda-se acompanhamento médico contínuo, ajuste terapêutico para controle
 
   // 60 dias da Marina com tendência crescente de piora metabólica
   // dia 60..40 saudável | 40..20 transição | 20..0 alerta
-  for (let i = 59; i >= 0; i--) {
-    for (let s = 0; s < 2; s++) {
-      const recordedAt = new Date(Date.now() - i * DAY + s * 11 * HOUR);
+  await prisma.vitalSign.createMany({
+    data: everyDay(60, 2, 11, (recordedAt, i) => {
       const t = 1 - (i / 59);  // 0 → 1 ao longo de 60 dias
       // Interpola entre saudável (t=0) e alerta (t=1)
-      const hr  = lerp(70,  84,  t) + noise(2);
-      const sys = lerp(114, 128, t) + noise(3);
-      const dia = lerp(74,  84,  t) + noise(2);
-      const o2  = lerp(98.5, 97,  t) + noise(0.3);
-      const glu = lerp(90,  112, t) + noise(4);
-      await prisma.vitalSign.create({
-        data: {
-          patientId: marinaId,
-          heartRate:   round(hr),
-          systolic:    round(sys),
-          diastolic:   round(dia),
-          oxygenSat:   round(o2, 1),
-          temperature: round(36.7 + noise(0.15), 1),
-          glucose:     round(glu),
-          source:      'wearable',
-          recordedAt,
-        },
-      });
-    }
-  }
+      return {
+        patientId: marinaId,
+        heartRate:   round(lerp(70,  84,  t) + noise(2)),
+        systolic:    round(lerp(114, 128, t) + noise(3)),
+        diastolic:   round(lerp(74,  84,  t) + noise(2)),
+        oxygenSat:   round(lerp(98.5, 97, t) + noise(0.3), 1),
+        temperature: round(36.7 + noise(0.15), 1),
+        glucose:     round(lerp(90,  112, t) + noise(4)),
+        source:      'wearable',
+        recordedAt,
+      };
+    }),
+  });
 
   // Exames da Marina — inicial (60 dias) vs atual (3 dias)
   const examIni = await prisma.exam.create({
@@ -463,6 +537,204 @@ A detecção precoce permite intervenção **antes** da evolução para um quadr
       },
     ],
   });
+
+  // ─── Paciente 3: Roberto Alves Pereira (caso oncológico) ──
+  // A história do stand: 63 anos, ex-fumante (35 maços-ano, parou há 8),
+  // intestino mudou, cansado. A balança Care Plus mostra 8 kg a menos em
+  // 90 dias; o hemograma tem anemia ferropriva e o FIT veio positivo. O
+  // motor dá colorretal INVESTIGAR e indica a TC de pulmão (ex-fumante).
+  console.log('  → Roberto Alves Pereira (caso oncológico)');
+  const robertoUser = await prisma.user.create({
+    data: {
+      email:         'roberto@healthinpulse.dev',
+      passwordHash:  await hash('Roberto@123'),
+      role:          'PATIENT',
+      emailVerified: true,
+      patient: {
+        create: {
+          fullName:       'Roberto Alves Pereira',
+          dateOfBirth:    new Date('1963-05-10'),
+          gender:         'MALE',
+          cpf:            '456.789.123-00',
+          phone:          '11 97600-3300',
+          bloodType:      'B+',
+          height:         172,
+          weight:         76,
+          allergies:      JSON.stringify([]),
+          chronicConds:   JSON.stringify(['Ex-tabagista (35 maços-ano, parou há 8 anos)']),
+          emergencyName:  'Sônia Pereira',
+          emergencyPhone: '11 97600-3301',
+        },
+      },
+    },
+    include: { patient: true },
+  });
+  const robertoId = robertoUser.patient.id;
+  await prisma.doctorPatient.create({ data: { doctorId, patientId: robertoId } });
+
+  // Pulseira: 30 dias de leituras discretamente alteradas (anemia: FC um
+  // pouco alta). Balança: 90 dias, de 84 para 76 kg, pesando de manhã
+  // (2 h antes da leitura da pulseira do dia, que fica como a mais recente).
+  await prisma.vitalSign.createMany({
+    data: [
+      ...everyDay(30, 2, 9, (recordedAt) => ({
+        patientId: robertoId,
+        heartRate:   round(88  + noise(4)),
+        systolic:    round(128 + noise(5)),
+        diastolic:   round(80  + noise(3)),
+        oxygenSat:   round(96.5 + noise(0.6), 1),
+        temperature: round(36.6 + noise(0.2), 1),
+        glucose:     round(98  + noise(6)),
+        source:      'wearable',
+        recordedAt,
+      })),
+      ...Array.from({ length: 31 }, (_, k) => ({
+        patientId:  robertoId,
+        weight:     round(lerp(84, 76, k / 30), 1),
+        source:     'scale',
+        recordedAt: new Date(Date.now() - (90 - k * 3) * DAY - 2 * HOUR),
+      })),
+    ],
+  });
+  await prisma.device.create({
+    data: {
+      patientId: robertoId, name: 'Balança Care Plus', type: 'scale',
+      status: 'ACTIVE', lastSyncAt: new Date(Date.now() - 2 * HOUR),
+    },
+  });
+
+  // Exames do Roberto: anemia ferropriva e sangue oculto positivo
+  const examHemo = await prisma.exam.create({
+    data: {
+      patientId: robertoId,
+      title:       'Hemograma e ferritina',
+      description: 'Hemograma completo e perfil de ferro',
+      fileUrl:     '/uploads/exams/seed-roberto-hemograma.pdf',
+      fileType:    'pdf',
+      status:      'DONE',
+      ocrText:     'Hemoglobina 10,9 g/dL. VCM 74 fL. Ferritina 9 ng/mL.',
+      uploadedAt:  new Date(Date.now() - 12 * DAY),
+      processedAt: new Date(Date.now() - 12 * DAY + 85000),
+    },
+  });
+  await prisma.examResult.create({
+    data: {
+      examId:    examHemo.id,
+      summary:   'Anemia microcítica com ferritina baixa (padrão de deficiência de ferro). Em homem de 63 anos, pede investigação de perda de sangue pelo intestino.',
+      findings:  JSON.stringify([
+        { name: 'Hemoglobina', value: '10,9', unit: 'g/dL',  status: 'baixo' },
+        { name: 'VCM',         value: '74',   unit: 'fL',    status: 'baixo' },
+        { name: 'Ferritina',   value: '9',    unit: 'ng/mL', status: 'baixo' },
+      ]),
+      riskLevel: 'HIGH',
+    },
+  });
+
+  const examFit = await prisma.exam.create({
+    data: {
+      patientId: robertoId,
+      title:       'Sangue oculto nas fezes (FIT)',
+      description: 'Teste imunoquímico fecal',
+      fileUrl:     '/uploads/exams/seed-roberto-fit.pdf',
+      fileType:    'pdf',
+      status:      'DONE',
+      ocrText:     'Pesquisa de sangue oculto nas fezes (método imunoquímico): POSITIVO.',
+      uploadedAt:  new Date(Date.now() - 10 * DAY),
+      processedAt: new Date(Date.now() - 10 * DAY + 60000),
+    },
+  });
+  await prisma.examResult.create({
+    data: {
+      examId:    examFit.id,
+      summary:   'FIT positivo. O próximo passo indicado é a colonoscopia.',
+      findings:  JSON.stringify([
+        { name: 'Pesquisa de sangue oculto nas fezes (FIT)', value: 'Positivo', unit: '', status: 'alterado' },
+      ]),
+      riskLevel: 'HIGH',
+    },
+  });
+
+  // Consulta do Roberto: retorno para pedir a colonoscopia
+  await prisma.appointment.create({
+    data: {
+      patientId: robertoId, doctorId,
+      scheduledAt: new Date(Date.now() + 1 * DAY + 9 * HOUR),
+      duration: 30, status: 'CONFIRMED',
+      notes: 'Retorno — FIT positivo e anemia: pedir colonoscopia',
+    },
+  });
+  await prisma.notification.create({
+    data: {
+      userId: robertoUser.id, type: 'INFO',
+      title:   'Exame processado',
+      message: 'Sangue oculto nas fezes analisado — resultado disponível',
+      read: false,
+      metadata: JSON.stringify({}),
+      createdAt: new Date(Date.now() - 10 * DAY + 60000),
+    },
+  });
+
+  // ─── Triagens concluídas (calculadas pelo motor) ──────────
+  // Cada persona faz a triagem de verdade (triageService: fase crônica,
+  // fase oncológica e finalize), com as respostas do roteiro. O resultado,
+  // o AiReport e o aviso à médica saem do motor, não de texto fixo.
+  console.log('  → triagens das personas (motor)');
+  const triageService = loadTriageService(prisma);
+
+  const roberto = await runTriage(triageService, robertoId, {
+    profile: {
+      smoker: true, packYears: 35, quitYears: 8, alcoholDosesWeek: 4,
+      familyHistoryCancer: [], familyHistoryDm: false, familyHistoryCv: false,
+    },
+    answers: {
+      mudanca_habito_intestinal: true,
+      fadiga_diurna:             true,
+      phq9_fadiga:               2,     // cansado mais da metade dos dias
+      perda_peso_inexplicada:    true,  // a balança já pesou: não conta de novo no câncer
+      tabagismo_acima_10_macos_ano: true,
+    },
+    daysAgo: 1,
+  });
+  expectOncology('Roberto', roberto, { CA_COLORRETAL: 'INVESTIGAR' });
+  if (roberto.result.riskLevel !== 'HIGH') {
+    throw new Error(`Seed: AiReport do Roberto deveria ser HIGH, veio ${roberto.result.riskLevel}`);
+  }
+
+  const joao = await runTriage(triageService, joaoId, {
+    profile: {
+      smoker: false, alcoholDosesWeek: 4, familyHistoryCancer: [],
+      familyHistoryDm: true, familyHistoryCv: true,
+    },
+    answers: {
+      has_conhecida: true, uso_anti_hipertensivo: true, diabetes_diagnosticado: true,
+      historico_glicemia_alterada: true, colesterol_alto_relato: true, historico_familiar_cv: true,
+      historico_familiar_dm2: true, sedentarismo: true, circunferencia_abdominal_aumentada: true,
+      ronco_alto: true, apneia_observada: true, fadiga_diurna: true, poliuria: true, polidipsia: true,
+    },
+    daysAgo: 5,
+  });
+  expectOncology('João', joao, { CA_COLORRETAL: 'ROTINA', CA_PULMAO: 'ROTINA', CA_PROSTATA: 'ROTINA' });
+
+  // Marina não respondeu às perguntas de mama ("não sei"): a ATENÇÃO dela
+  // vem do perfil (mãe com câncer de mama aos 41). Um "não" ali derrubaria
+  // o risco relativo para perto de 1 e ela cairia em ROTINA.
+  const marina = await runTriage(triageService, marinaId, {
+    profile: {
+      smoker: false, alcoholDosesWeek: 2, familyHistoryCancer: ['mama'], papEmDia: false,
+      familyHistoryDm: false, familyHistoryCv: false,
+    },
+    answers: {
+      historico_glicemia_alterada: true, ganho_peso_inexplicado: true,
+    },
+    unknown: ['nodulo_mama', 'alteracao_mamilo', 'alteracao_pele_mama'],
+    daysAgo: 2,
+  });
+  expectOncology('Marina', marina, { CA_MAMA: 'ATENÇÃO' });
+
+  // A triagem gera metas e o bônus de coins sozinha. Roberto fica com as
+  // dele; João e Marina usam as metas e o saldo curados mais abaixo.
+  await prisma.healthGoal.deleteMany({ where: { patientId: { in: [joaoId, marinaId] } } });
+  await prisma.healthCoinTx.deleteMany({ where: { patientId: { in: [joaoId, marinaId] } } });
 
   // ─── Catálogo de recompensas ──────────────────────────────
   console.log('  → catálogo de recompensas');
@@ -644,6 +916,7 @@ A detecção precoce permite intervenção **antes** da evolução para um quadr
   console.log('  👩‍⚕️ Médica:  doctor@healthinpulse.dev  / Doctor@123  (Dra. Ana Beatriz)');
   console.log('  🧑 João:    joao@healthinpulse.dev    / Joao@123    (caso grave)');
   console.log('  👩 Marina:  marina@healthinpulse.dev  / Marina@123  (preventivo)');
+  console.log('  👴 Roberto: roberto@healthinpulse.dev / Roberto@123 (colorretal)');
 }
 
 main()

@@ -138,8 +138,9 @@ diretamente. Ou digite manualmente:
 | Perfil                        | E-mail                          | Senha         | Tipo                                       |
 |------------------------------|---------------------------------|---------------|--------------------------------------------|
 | 🩺 **João Carlos Mendes**     | `joao@healthinpulse.dev`        | `Joao@123`    | Paciente · caso grave (HAS + DM2)          |
-| ✨ **Marina Azevedo Lima**    | `marina@healthinpulse.dev`      | `Marina@123`  | Paciente · preventivo (pré-diabetes)       |
-| 🧑‍⚕️ **Dra. Ana Beatriz Souza** | `doctor@healthinpulse.dev`      | `Doctor@123`  | Médica · vinculada aos 2 pacientes acima   |
+| ✨ **Marina Azevedo Lima**    | `marina@healthinpulse.dev`      | `Marina@123`  | Paciente · preventivo (pré-diabetes; mama em atenção pela história familiar) |
+| 🧓 **Roberto Alves Pereira**  | `roberto@healthinpulse.dev`     | `Roberto@123` | Paciente · colorretal a investigar (FIT+, anemia, perda de peso na balança) |
+| 🧑‍⚕️ **Dra. Ana Beatriz Souza** | `doctor@healthinpulse.dev`      | `Doctor@123`  | Médica · vinculada aos 3 pacientes acima   |
 
 ---
 
