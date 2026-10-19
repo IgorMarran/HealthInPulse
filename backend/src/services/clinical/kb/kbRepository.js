@@ -37,12 +37,15 @@ const createKbRepository = (prisma) => {
     return agg._max.version ?? 0;
   };
 
+  // Leitura atômica: versão e as 7 tabelas no mesmo instantâneo (uma
+  // transação). Sem isso, uma edição gravada no meio da leitura daria um
+  // kb com a versão antiga e parte dos valores novos (ou o contrário).
   const load = async () => {
-    const [version, ...lists] = await Promise.all([
-      currentVersion(),
+    const [agg, ...lists] = await prisma.$transaction([
+      prisma.knowledgeVersion.aggregate({ _max: { version: true } }),
       ...KB_TABLES.map(t => prisma[t.model].findMany({ orderBy: t.orderBy })),
     ]);
-    const kb = { version };
+    const kb = { version: agg._max.version ?? 0 };
     KB_TABLES.forEach((t, i) => { kb[t.key] = lists[i].map(row => fromRow(t, row)); });
     // Compartilhado entre requisições: congelado para ninguém alterar sem querer
     return deepFreeze(kb);

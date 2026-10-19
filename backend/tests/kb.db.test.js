@@ -49,7 +49,9 @@ test.before(() => {
 
 test.after(async () => {
   await prisma?.$disconnect();
-  if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+  // maxRetries: no Windows o arquivo do SQLite pode ficar preso (EBUSY) por
+  // alguns ms depois do $disconnect
+  if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 // Base limpa: só o seed, sem histórico

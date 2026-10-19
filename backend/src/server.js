@@ -23,10 +23,11 @@ const ensureKnowledgeBase = async () => {
       : created ? `${created} itens novos do seed (edições da médica mantidas)` : 'editada pela médica, sem itens novos';
     logger.info(`🧠 Base de conhecimento v${kb.version}: ${kb.conditions.length} condições, ${what}`);
   } catch (err) {
-    // P2021: tabela não existe (banco criado antes do schema novo)
-    if (err.code === 'P2021') {
-      throw new Error('Tabelas da base de conhecimento não existem no banco. '
-        + 'Rode `npm run setup` na raiz (mantém seus dados) ou `npm run db:reset`.');
+    // P2021: tabela não existe; P2022: coluna não existe. Os dois são banco
+    // criado antes do schema novo (ex.: o dev.db do notebook do stand).
+    if (err.code === 'P2021' || err.code === 'P2022') {
+      throw new Error('O banco está desatualizado em relação ao schema (faltam tabelas ou colunas '
+        + 'da base de conhecimento). Rode `npm run setup` na raiz (mantém seus dados) ou `npm run db:reset`.');
     }
     throw err;
   }
