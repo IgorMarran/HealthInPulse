@@ -54,9 +54,11 @@ function buildEnv(fileEnv) {
     OPENAI_API_KEY: '',         // offline: sempre o simulador local
     CHECKPOINT_DISABLE: '1',    // o Prisma não consulta versão nova na rede
   });
-  delete env.DEMO_PASSWORD;     // sem portão de senha no stand
-  delete env.TRUST_PROXY;
-  delete env.FRONTEND_DIST;
+  // Sem portão de senha no stand. '' (e não delete): o dotenv do backend não
+  // sobrescreve chave já existente, mas recolocaria a que faltasse do backend/.env.
+  env.DEMO_PASSWORD = '';
+  env.TRUST_PROXY = '';
+  env.FRONTEND_DIST = '';
   return env;
 }
 
@@ -217,6 +219,9 @@ async function main() {
   ok(`porta ${PORT} livre`);
 
   step('Configurando backend/.env');
+  // Antes de tudo: o que o notebook tiver no ambiente não pode ligar o portão
+  // de senha nem nos filhos (seed/build) nem no servidor.
+  for (const k of ['DEMO_PASSWORD', 'TRUST_PROXY', 'FRONTEND_DIST']) delete process.env[k];
   const fileEnv = ensureEnv();
   const env = buildEnv(fileEnv);
   if (String(fileEnv.KB_EDIT).toLowerCase() !== 'true') warn(`.env tem KB_EDIT=${fileEnv.KB_EDIT}; no stand a Base da IA fica editável de qualquer jeito`);
