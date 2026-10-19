@@ -50,7 +50,17 @@ test('evalWhen: operador desconhecido é erro; validateWhen aponta', () => {
   assert.throws(() => evalWhen({ field: 'age' }, {}), /lista/);
   assert.deepEqual(validateWhen([{ field: 'age', op: 'gt', value: 1 }]), []);
   assert.equal(validateWhen([{ field: '', op: 'xx' }]).length, 2);
-  assert.deepEqual(SUPPORTED_OPS.sort(), ['eq', 'falsy', 'gt', 'gte', 'in', 'lt', 'lte', 'neq', 'truthy']);
+  assert.deepEqual([...SUPPORTED_OPS].sort(), ['eq', 'falsy', 'gt', 'gte', 'in', 'includes', 'lt', 'lte', 'neq', 'truthy']);
+});
+
+test('evalWhen: includes = o campo (lista do multiselect) contém o valor', () => {
+  const w = [{ field: 'familyHistoryCancer', op: 'includes', value: 'mama' }];
+  assert.equal(evalWhen(w, { familyHistoryCancer: ['ovario', 'mama'] }), true);
+  assert.equal(evalWhen(w, { familyHistoryCancer: ['ovario'] }), false);
+  assert.equal(evalWhen(w, { familyHistoryCancer: [] }), false);
+  assert.equal(evalWhen(w, {}), false);                                // ausente
+  assert.equal(evalWhen(w, { familyHistoryCancer: 'mama' }), false);   // não é lista
+  assert.deepEqual(validateWhen(w), []);
 });
 
 // ─── Formato do kb ──────────────────────────────────────────────────
@@ -63,8 +73,10 @@ const FIELDS = {
   symptoms:          ['code', 'label', 'kind', 'questionText', 'help', 'type', 'options', 'binaryThreshold', 'cost',
                       'scaleTag', 'redFlagProbe', 'showIf', 'followUps', 'panels', 'sortOrder', 'active'],
   conditionSymptoms: ['id', 'conditionCode', 'symptomCode', 'pSx', 'pNoSx', 'lrPos', 'sourceCode', 'note'],
-  labRules:          [],
-  screeningRules:    [],
+  labRules:          ['id', 'code', 'label', 'aliases', 'operator', 'threshold', 'unit', 'sexFilter', 'minAge', 'maxAge',
+                      'symptomCode', 'weight', 'emitNegative', 'maxAgeDays', 'sortOrder', 'active', 'sourceCode'],
+  screeningRules:    ['id', 'conditionCode', 'exam', 'kind', 'sexFilter', 'minAge', 'maxAge', 'when', 'intervalMonths',
+                      'recommendation', 'priority', 'active', 'sourceCode'],
 };
 
 test('kb: objeto simples, serializável, com os campos do modelo de dados', () => {
@@ -75,10 +87,34 @@ test('kb: objeto simples, serializável, com os campos do modelo de dados', () =
     assert.ok(Array.isArray(kb[entity]), entity);
     for (const row of kb[entity]) assert.deepEqual(Object.keys(row).sort(), [...fields].sort(), `${entity} ${row.code ?? row.id}`);
   }
-  assert.equal(kb.conditions.length, 8);
-  assert.ok(kb.conditions.every(c => c.category === 'CRONICA'));
-  assert.equal(kb.labRules.length, 0);
-  assert.equal(kb.screeningRules.length, 0);
+  assert.equal(kb.conditions.length, 13);
+  assert.equal(kb.conditions.filter(c => c.category === 'CRONICA').length, 8);
+  assert.equal(kb.conditions.filter(c => c.category === 'ONCOLOGICA').length, 5);
+  assert.ok(kb.labRules.length > 0 && kb.screeningRules.length > 0);
+  // só crônicas (como a v7): sem exames nem rastreamento
+  const v7 = buildFromSeed({ includeOncology: false });
+  assert.equal(v7.conditions.length, 8);
+  assert.ok(v7.conditions.every(c => c.category === 'CRONICA'));
+  assert.equal(v7.labRules.length, 0);
+  assert.equal(v7.screeningRules.length, 0);
+});
+
+test('kb: sintoma repetido entre lotes só soma painéis se o tipo for o mesmo', () => {
+  const kb = buildFromSeed();
+  // compartilhados de propósito: a definição crônica fica, os painéis somam
+  const peso = kb.symptoms.find(s => s.code === 'perda_peso_inexplicada');
+  assert.deepEqual(peso.panels, ['CRONICA', 'ONCOLOGIA', 'RAPIDO']);
+  assert.equal(peso.questionText, questions.getQuestionForSymptom('perda_peso_inexplicada').text);
+  assert.deepEqual(kb.symptoms.find(s => s.code === 'rouquidao').panels, ['CRONICA', 'ONCOLOGIA']);
+  // tipo diferente (pergunta × exame) seria esconder a pergunta: erro
+  const onco = require('../src/services/clinical/data/oncology');
+  const original = onco.symptoms;
+  try {
+    onco.symptoms = [...original, { ...original[0], code: 'bradicardia', kind: 'QUESTION' }];
+    assert.throws(() => buildFromSeed(), /tipos diferentes/);
+  } finally {
+    onco.symptoms = original;
+  }
 });
 
 test('kb: ids únicos, chaves estrangeiras válidas e fonte em todo número', () => {
@@ -110,9 +146,31 @@ test('kb: ids únicos, chaves estrangeiras válidas e fonte em todo número', ()
   }
 });
 
+// Perfil (idade, IMC, sexo) entra só no prior. Os achados idade_*/imc_*/
+// sexo_masculino abaixo são da matriz v7 (o golden os usa como evidência)
+// e NADA os deriva do perfil: ficam sem painel, só nas crônicas. Lista
+// fechada: qualquer achado de perfil novo (ou ligado a um câncer) falha.
+const LEGACY_V7_PROFILE_FINDINGS = new Set([
+  'imc_obesidade', 'imc_sobrepeso', 'idade_50_mais', 'idade_55h_65m', 'idade_65_mais', 'sexo_masculino',
+]);
+
+test('kb: nenhum sintoma derivado de perfil (exceto os achados legados da v7, só crônicos)', () => {
+  const kb = buildFromSeed();
+  const category = new Map(kb.conditions.map(c => [c.code, c.category]));
+  const PROFILE_LIKE = /^(idade|imc|sexo|age|bmi|sex)_/;
+  for (const s of kb.symptoms.filter(x => PROFILE_LIKE.test(x.code))) {
+    assert.ok(LEGACY_V7_PROFILE_FINDINGS.has(s.code), `${s.code}: perfil não pode virar sintoma (vai no PriorRule)`);
+    assert.deepEqual(s.panels, [], `${s.code}: achado legado não vira pergunta`);
+  }
+  for (const cs of kb.conditionSymptoms) {
+    if (category.get(cs.conditionCode) !== 'ONCOLOGICA') continue;
+    assert.doesNotMatch(cs.symptomCode, PROFILE_LIKE, `${cs.id}: câncer com likelihood de perfil`);
+  }
+});
+
 test('kb: sortOrder dos sintomas segue SYMPTOM_QUESTIONS (desempate do seletor)', () => {
   const kb = buildFromSeed();
-  const asked = kb.symptoms.filter(s => s.kind === 'QUESTION').sort((a, b) => a.sortOrder - b.sortOrder);
+  const asked = kb.symptoms.filter(s => s.kind === 'QUESTION' && s.panels.includes('CRONICA')).sort((a, b) => a.sortOrder - b.sortOrder);
   assert.deepEqual(asked.map(s => s.code), questions.SYMPTOM_QUESTIONS.map(q => q.symptom));
   // sintomas sem pergunta não entram em painel nenhum
   for (const s of kb.symptoms.filter(x => x.kind !== 'QUESTION')) assert.deepEqual(s.panels, [], s.code);
@@ -130,15 +188,17 @@ test('kb: buildFromSeed devolve cópia nova; getSeedKb é congelado', () => {
 
 // ─── Candidatas ─────────────────────────────────────────────────────
 test('candidatesFor: filtra por painel, showIf em JSON e red flag', () => {
-  const kb = buildFromSeed();
+  const kb = buildFromSeed({ includeOncology: false });
   const male   = questions.candidatesFor(kb, { sex: 'male' }, 'CRONICA').map(c => c.symptom);
   const female = questions.candidatesFor(kb, { sex: 'female' }, 'CRONICA').map(c => c.symptom);
   assert.ok(!male.includes('irregularidade_menstrual'));
   assert.ok(female.includes('irregularidade_menstrual'));
   assert.ok(!female.includes('deficit_neurologico_subito'));
   assert.deepEqual(questions.candidatesFor(kb, {}, 'ONCOLOGIA'), []);
-  // o wrapper v7 é o painel crônico do kb do JS
+  // o wrapper v7 é o painel crônico do kb do JS (com ou sem oncologia, igual)
   assert.deepEqual(questions.candidatesForProfile({ sex: 'female' }), questions.candidatesFor(kb, { sex: 'female' }, 'CRONICA'));
+  assert.deepEqual(questions.candidatesFor(buildFromSeed(), { sex: 'female', age: 50 }, 'CRONICA'),
+    questions.candidatesFor(kb, { sex: 'female', age: 50 }, 'CRONICA'));
 
   // mesmo payload de pergunta que o serializeQuestion da v7
   const byId = new Map(questions.SYMPTOM_QUESTIONS.map(q => [q.id, q]));
@@ -210,7 +270,7 @@ test('engine: editar o kb muda o resultado (sem mexer no código)', () => {
 });
 
 test('engine: categories filtra as condições', () => {
-  const kb = buildFromSeed();
+  const kb = buildFromSeed({ includeOncology: false });
   kb.conditions.push({ ...kb.conditions[0], code: 'CA_TESTE', category: 'ONCOLOGICA', sortOrder: 99, basePrior: 0.004 });
   kb.conditionSymptoms.push({ ...kb.conditionSymptoms[0], id: 'cs:CA_TESTE:ronco_alto', conditionCode: 'CA_TESTE' });
   const chronic = bayes.createEngine(kb, { categories: ['CRONICA'] });

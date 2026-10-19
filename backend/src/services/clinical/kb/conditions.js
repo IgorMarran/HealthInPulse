@@ -11,7 +11,10 @@
 //   - neq NÃO tem guarda de null: sexo ausente conta como "não é mulher",
 //     como o `sex === 'female' ? ... : ...` do v7;
 //   - truthy/falsy usam Boolean(v), como o `if (smoker)` do v7;
-//   - in compara com igualdade estrita contra uma lista de valores.
+//   - in compara com igualdade estrita contra uma lista de valores;
+//   - includes é o contrário: o CAMPO é uma lista (multiselect, ex.:
+//     familyHistoryCancer) e precisa conter `value`. Campo ausente ou
+//     que não é lista → false.
 
 const OPS = {
   eq:     (v, x) => v === x,
@@ -23,6 +26,7 @@ const OPS = {
   truthy: (v)    => Boolean(v),
   falsy:  (v)    => !v,
   in:     (v, x) => Array.isArray(x) && x.includes(v),
+  includes: (v, x) => Array.isArray(v) && v.includes(x),
 };
 
 const SUPPORTED_OPS = Object.keys(OPS);

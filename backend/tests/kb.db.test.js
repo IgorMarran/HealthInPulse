@@ -109,7 +109,7 @@ test('seedKnowledge: upsert é idempotente e sobrescreve valor alterado', async 
   await freshDb();
   await prisma.condition.update({ where: { code: 'DM2' }, data: { basePrior: 0.5 } });
   const counts = await seedKnowledge(prisma); // upsert
-  assert.equal(counts.conditions, 8);
+  assert.equal(counts.conditions, 13); // 8 crônicas + 5 cânceres
   await seedKnowledge(prisma);
   assert.ok(sameKb(await createKbRepository(prisma).get(), buildFromSeed()));
 });
@@ -168,8 +168,8 @@ test('seedKnowledge é genérico: condição oncológica, exame e rastreamento f
   await freshDb(kb);
   const fromDb = await createKbRepository(prisma).get();
   assert.deepEqual(normalizeKb(fromDb), normalizeKb(kb));
-  assert.equal(fromDb.labRules.length, 1);
-  assert.equal(fromDb.screeningRules.length, 1);
+  assert.equal(fromDb.labRules.length, buildFromSeed().labRules.length + 1);
+  assert.equal(fromDb.screeningRules.length, buildFromSeed().screeningRules.length + 1);
 });
 
 // ─── kbRepository ───────────────────────────────────────────────────

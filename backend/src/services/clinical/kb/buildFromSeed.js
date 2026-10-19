@@ -215,7 +215,11 @@ const chronicSeed = () => {
 // ─── Montagem ───────────────────────────────────────────────────────
 // Junta lotes de dados crus (formato de data/oncology.js) num kb só.
 // Sintoma repetido entre lotes (ex.: perda de peso, que é crônica e
-// oncológica) mantém a primeira definição e soma os painéis.
+// oncológica) mantém a primeira definição (texto, custo, showIf,
+// sortOrder: a fase crônica não muda) e soma os painéis. Só vale para o
+// MESMO tipo de sintoma: se um lote declara como pergunta um código que
+// outro declarou como exame/pulseira, a primeira definição esconderia a
+// pergunta (sem questionText), então é erro de dado.
 const assemble = (batches) => {
   const kb = {
     version: 0, // kb do JS; o do banco usa o número da KnowledgeVersion
@@ -241,6 +245,10 @@ const assemble = (batches) => {
     for (const s of b.symptoms ?? []) {
       const prev = symptomByCode.get(s.code);
       if (prev) {
+        const kind = s.kind ?? 'QUESTION';
+        if (prev.kind !== kind) {
+          throw new Error(`Sintoma ${s.code} declarado com tipos diferentes (${prev.kind} e ${kind})`);
+        }
         for (const p of s.panels ?? []) if (!prev.panels.includes(p)) prev.panels.push(p);
         continue;
       }
@@ -255,10 +263,10 @@ const assemble = (batches) => {
   return kb;
 };
 
-// buildFromSeed() → só as 8 crônicas (v7).
-// buildFromSeed({ includeOncology: true }) → + data/oncology.js (tarefa 5).
+// buildFromSeed() → 8 crônicas (v7) + 5 cânceres (data/oncology.js).
+// buildFromSeed({ includeOncology: false }) → só as crônicas (testes do v7).
 // Devolve sempre um objeto novo, que pode ser alterado à vontade.
-const buildFromSeed = ({ includeOncology = false } = {}) => {
+const buildFromSeed = ({ includeOncology = true } = {}) => {
   const batches = [chronicSeed()];
   if (includeOncology) batches.push(require('../data/oncology'));
   // structuredClone corta referências aos arrays do seed (followUps,
