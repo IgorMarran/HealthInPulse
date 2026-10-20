@@ -201,7 +201,7 @@ só do que o `npm run setup` já instalou (rode o setup uma vez, com internet).
 | `npm run stand -- --port=3001`       | outra porta (ou a variável `STAND_PORT`; padrão 3000)                |
 | `npm run stand -- --check`           | sobe, confere `/health`, `/teste`, o login da médica e a Base da IA editável, e encerra (usado no CI; porta padrão 3997) |
 
-`STAND_PUBLIC_URL` troca o link do Render que o banner imprime. Para o stand
+`STAND_PUBLIC_URL` troca só o link do Render impresso no terminal (não mexe no banner nem no QR). Para o stand
 valem sempre `KB_EDIT=true`, `AUTH_RATE_LIMIT=1000` (todo mundo sai pelo IP do
 notebook), `OPENAI_API_KEY` vazia e **sem `DEMO_PASSWORD`**, mesmo que exista
 no ambiente ou no `backend/.env`. Se o celular não abrir o endereço da rede,
@@ -212,6 +212,15 @@ o comando).
 endereço escrito no banner. Quando a URL real do Render chegar:
 `npm run qr -- https://SEU-APP.onrender.com/teste --pdf` (o `--pdf` também
 regera o `banner.pdf`; precisa de Chrome, Chromium ou Edge).
+
+**Quando a URL do Render chegar** (ela vive em três lugares):
+1. `frontend/src/config.js`, `PUBLIC_TEST_URL`: o QR na tela do `/teste`. Fixo no build, então rode `npm run build`
+   (ou defina `VITE_PUBLIC_TEST_URL` no build).
+2. `scripts/stand.mjs`, `PUBLIC_URL`: só o texto que o `npm run stand` imprime (ou use `STAND_PUBLIC_URL`).
+3. `Docs/feira/banner.html`, `qr-teste.svg` e `banner.pdf`: o banner impresso.
+
+O `npm run qr -- URL --pdf` troca os três de uma vez; depois confira com `git diff`, rode `npm run build` e aponte a
+câmera para o QR da tela e do PDF.
 
 **Teste rápido (`/teste`).** Página pública: perfil, até 8 perguntas, resultado
 com categoria, "vezes a média da sua idade", frequência natural e rastreamento

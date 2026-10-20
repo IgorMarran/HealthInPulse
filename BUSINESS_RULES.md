@@ -795,7 +795,7 @@ mudar, o seed falha alto em vez de levar o problema para o stand.
 |---|---|---|---|
 | **Roberto**, 63, ex-fumante (35 maços-ano, parou há 8 anos) | `roberto@healthinpulse.dev` / `Roberto@123` | **colorretal em INVESTIGAR** (FIT+, Hb 10,9, balança -9,5% em 90 dias, mudança no intestino); pulmão em ATENÇÃO | HIGH; médica recebe o alerta |
 | **Marina**, 34 | `marina@healthinpulse.dev` / `Marina@123` | **mama em ATENÇÃO** (história familiar); colo do útero em rotina; mamografia e DNA-HPV indicados | MODERATE (crônico LOW) |
-| **João**, 58 | `joao@healthinpulse.dev` / `Joao@123` | tudo em ROTINA (FIT e PSA por decisão compartilhada) | CRITICAL pela parte crônica (DM2) |
+| **João**, 58 | `joao@healthinpulse.dev` / `Joao@123` | tudo em ROTINA (FIT indicado agora; PSA por decisão compartilhada) | CRITICAL pela parte crônica (DM2) |
 | **Dra. Ana Beatriz Souza** | `doctor@healthinpulse.dev` / `Doctor@123` | vinculada aos três | |
 
 ## 19. Operação: testes, stand e Render

@@ -15,7 +15,7 @@ Quem clica fica no notebook; quem fala, de frente para o público. Nunca diga "a
 | 1 | `http://localhost:3000/teste?kiosk=1` | passo 1 (modo quiosque: volta à capa sozinho após 120 s parado) |
 | 2 | `http://localhost:3000/login` | passos 2 a 5, já logada como médica (veja abaixo) |
 
-Logins (todos no card da tela de login; a senha já vem preenchida ao clicar no card):
+Logins (todos no card da tela de login; clicar no card já faz o login):
 
 | Quem | E-mail | Senha |
 |---|---|---|
@@ -53,7 +53,7 @@ Se alguém receber ATENÇÃO ou INVESTIGAR de verdade, pare a demo e siga o acol
 
 ### 2. Roberto, na visão da médica · 1:30
 
-1. Aba 2: no login, clique no card **Dra. Ana** (`doctor@healthinpulse.dev` / `Doctor@123`) e **Entrar**.
+1. Aba 2: no login, clique no card **Dra. Ana** (`doctor@healthinpulse.dev` / `Doctor@123`): o clique já entra.
 2. Menu **Pacientes** → **Roberto Alves Pereira**. O **painel de riscos** está logo abaixo do cabeçalho.
 3. Chips de "baseado em": triagem, exames (FIT positivo, hemoglobina 10,9), **balança** (perda de 9,5% em 90 dias, 84 → 76 kg).
 4. Card **Colorretal**: selo **INVESTIGAR**, risco **"≥20%"** em 2 anos (o motor calcula 44,8%; a tela corta em 20% porque
@@ -91,7 +91,10 @@ Se alguém receber ATENÇÃO ou INVESTIGAR de verdade, pare a demo e siga o acol
 3. Se sobrar tempo: **João** (58) em ROTINA, mesmo com risco crônico CRITICAL (diabetes). O painel de câncer não
    é tingido pelo risco crônico.
 
-Extra do paciente (opcional, +1 min): entre como Roberto/João no card do login e faça a triagem: aparece o banner
+Extra do paciente (opcional, +1 min): os tokens ficam no `localStorage`, que é compartilhado entre abas, então o
+paciente precisa entrar numa **janela anônima** (ou em outro perfil do navegador); na mesma janela da médica ele
+derruba o login dela. Prefira o **João** para a triagem ao vivo. Se for o Roberto, a triagem ao vivo **substitui** a
+última dele e muda a história dos 44,8% até rodar `npm run stand` de novo. Entre pelo card do login e faça a triagem: aparece o banner
 **"Etapa 2 de 2 — câncer"**. O confete só sai sem risco. Com a médica logada em outra aba, aparece o aviso
 "Câncer para investigar: colorretal. Ver paciente →".
 

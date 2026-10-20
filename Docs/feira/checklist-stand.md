@@ -5,6 +5,9 @@ Marque na ordem. O que depende de uma pessoa está com o nome de quem faz no pla
 ## Até quinta 22/10
 
 - [ ] **Banner na gráfica** (leva de 24 a 48 h): `Docs/feira/banner.pdf`, 80 × 120 cm, retrato.
+  - **Quando a URL do Render chegar**, ela vive em três lugares: `frontend/src/config.js` (QR da tela do `/teste`,
+    fixo no build), `scripts/stand.mjs` (texto do terminal) e o banner (`banner.html`, `qr-teste.svg`, `banner.pdf`).
+    O comando abaixo troca os três; depois rode `npm run build` e confira o QR da tela e o do PDF.
   - Antes de mandar, confira se a URL do QR é a do Render de verdade. Se mudou:
     `npm run qr -- https://SEU-APP.onrender.com/teste --pdf` (regera o `qr-teste.svg`, o texto da URL no banner e o
     PDF).
