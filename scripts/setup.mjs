@@ -10,21 +10,21 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT     = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BACKEND  = join(ROOT, 'backend');
-const FRONTEND = join(ROOT, 'frontend');
-const ENV_FILE = join(BACKEND, '.env');
+export const ROOT     = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+export const BACKEND  = join(ROOT, 'backend');
+export const FRONTEND = join(ROOT, 'frontend');
+export const ENV_FILE = join(BACKEND, '.env');
 const ENV_EXAMPLE = join(BACKEND, '.env.example');
 const SCHEMA_DIR  = join(BACKEND, 'src', 'prisma');
 
 const MIN_NODE = 20;
-const IS_WIN   = process.platform === 'win32';
+export const IS_WIN   = process.platform === 'win32';
 const args     = new Set(process.argv.slice(2));
 
-const c = {
+export const c = {
   bold:  (s) => `\x1b[1m${s}\x1b[0m`,
   green: (s) => `\x1b[32m${s}\x1b[0m`,
   yellow:(s) => `\x1b[33m${s}\x1b[0m`,
@@ -33,18 +33,18 @@ const c = {
 };
 
 let stepNo = 0;
-const step = (msg) => console.log(`\n${c.bold(`[${++stepNo}]`)} ${msg}`);
-const ok   = (msg) => console.log(`    ${c.green('✔')} ${msg}`);
-const warn = (msg) => console.log(`    ${c.yellow('!')} ${msg}`);
+export const step = (msg) => console.log(`\n${c.bold(`[${++stepNo}]`)} ${msg}`);
+export const ok   = (msg) => console.log(`    ${c.green('✔')} ${msg}`);
+export const warn = (msg) => console.log(`    ${c.yellow('!')} ${msg}`);
 
-class SetupError extends Error {
+export class SetupError extends Error {
   constructor(message, hint) { super(message); this.hint = hint; }
 }
 
 // ─── execução de comandos ────────────────────────────────────
 
 // Mostra a saída ao vivo e guarda uma cópia para diagnosticar falhas.
-function run(cmd, cmdArgs, { cwd = ROOT } = {}) {
+export function run(cmd, cmdArgs, { cwd = ROOT } = {}) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(cmd, cmdArgs, {
       cwd,
@@ -79,14 +79,14 @@ const FILE_LOCKED_HINT =
 
 // Arquivo travado vem antes: no Windows o EPERM/EBUSY é quase sempre o
 // `npm run dev` segurando o engine do Prisma ou o dev.db, não a rede.
-function hintFor(output = '') {
+export function hintFor(output = '') {
   if (/EPERM|EBUSY/.test(output)) return FILE_LOCKED_HINT;
   if (/binaries\.prisma\.sh|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|self[- ]signed certificate|unable to get local issuer/i
     .test(output)) return PRISMA_DOWNLOAD_HINT;
   return undefined;
 }
 
-async function runPrisma(prismaArgs) {
+export async function runPrisma(prismaArgs) {
   try {
     return await run('npx', ['--no-install', 'prisma', ...prismaArgs], { cwd: BACKEND });
   } catch (err) {
@@ -106,7 +106,7 @@ async function npmCi(dir, label) {
 
 // ─── .env ────────────────────────────────────────────────────
 
-function parseEnv(text) {
+export function parseEnv(text) {
   const env = {};
   for (const line of text.split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i);
@@ -127,7 +127,7 @@ const isPlaceholderSecret = (v) => !v || v.startsWith('troque_');
 
 // Cria o .env ou conserta um .env feito à mão a partir do exemplo antigo
 // (que apontava para Postgres e trazia OPENAI_API_KEY=sk-...).
-function ensureEnv() {
+export function ensureEnv() {
   const created = !existsSync(ENV_FILE);
   let text = readFileSync(created ? ENV_EXAMPLE : ENV_FILE, 'utf8');
   const env = parseEnv(text);
@@ -148,6 +148,14 @@ function ensureEnv() {
     if (!created) fixes.push('OPENAI_API_KEY não parecia uma chave real; deixei vazia (usa o simulador local)');
   }
 
+  // Base da IA editável nesta máquina (dev e notebook do stand). Sem a
+  // variável o servidor fica só leitura (padrão seguro do Render/Docker).
+  // Valor já definido (ex.: KB_EDIT=false) é respeitado.
+  if (env.KB_EDIT === undefined) {
+    text = setEnvVar(text, 'KB_EDIT', 'true');
+    if (!created) fixes.push('KB_EDIT ausente; liguei a edição da Base da IA neste computador (KB_EDIT=true)');
+  }
+
   if (created || fixes.length) writeFileSync(ENV_FILE, text);
   if (created) ok('backend/.env criado com segredos JWT novos');
   else if (fixes.length) fixes.forEach((f) => warn(`.env corrigido: ${f}`));
@@ -156,14 +164,14 @@ function ensureEnv() {
   return parseEnv(text);
 }
 
-function dbFilePath(env) {
+export function dbFilePath(env) {
   const url = env.DATABASE_URL.replace(/^file:/, '');
   return resolve(SCHEMA_DIR, url); // Prisma resolve relativo ao schema.prisma
 }
 
 // ─── checagens ───────────────────────────────────────────────
 
-function checkNode() {
+export function checkNode() {
   const major = Number(process.versions.node.split('.')[0]);
   if (major < MIN_NODE) {
     throw new SetupError(
@@ -176,7 +184,7 @@ function checkNode() {
 
 // O OneDrive sincroniza o node_modules enquanto o npm escreve: EPERM/EBUSY
 // aleatórios e um setup lento. A pasta Documentos do Windows costuma estar nele.
-function checkProjectPath() {
+export function checkProjectPath() {
   if (IS_WIN && /onedrive/i.test(ROOT)) {
     warn('o projeto está dentro do OneDrive; se der EPERM/EBUSY, clone fora dele (ex.: C:\\dev\\HealthInPulse)');
   }
@@ -216,11 +224,13 @@ async function main() {
     await npmCi(BACKEND, 'backend');
     await npmCi(FRONTEND, 'frontend');
     ok('dependências instaladas');
-
-    step('Gerando o Prisma Client');
-    await runPrisma(['generate']);
-    ok('Prisma Client gerado');
   }
+
+  // Também no db:reset: depois de um `git pull` que mexe no schema, o
+  // client antigo não conhece as tabelas novas e o seed quebra.
+  step('Gerando o Prisma Client');
+  await runPrisma(['generate']);
+  ok('Prisma Client gerado');
 
   step('Criando/atualizando o banco SQLite');
   const dbFile = dbFilePath(env);
@@ -244,9 +254,13 @@ async function main() {
   console.log('e abra http://localhost:5173 (na tela de login, clique num card "Demo").\n');
 }
 
-main().catch((err) => {
-  console.error(`\n${c.red(c.bold('✖ Setup falhou:'))} ${err.message}`);
-  if (err.hint) console.error(`\n${err.hint}`);
-  console.error(c.dim('\nSe não resolver, mande o print deste terminal no grupo.\n'));
-  process.exit(1);
-});
+// Também é importado pelo scripts/stand.mjs (reaproveita run, cores e o .env):
+// só executa quando o arquivo é o ponto de entrada.
+if (basename(process.argv[1] ?? '') === 'setup.mjs') {
+  main().catch((err) => {
+    console.error(`\n${c.red(c.bold('✖ Setup falhou:'))} ${err.message}`);
+    if (err.hint) console.error(`\n${err.hint}`);
+    console.error(c.dim('\nSe não resolver, mande o print deste terminal no grupo.\n'));
+    process.exit(1);
+  });
+}

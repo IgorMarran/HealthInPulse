@@ -182,6 +182,69 @@ const summarizeForPatient = (w = {}) => {
   return items;
 };
 
+// ─── Tendência de peso (balança conectada) ─────────────────────────
+// Queda ≥ 5% do peso em até 180 dias vira o achado `perda_peso_objetiva`
+// (likelihood só nos cânceres colorretal e de pulmão). É uma chave NOVA,
+// diferente de perda_peso_inexplicada (a pergunta), de propósito: o red
+// flag NEOPLASIA olha a resposta da pergunta, não a balança. Quando a
+// balança MOSTRA a perda, ela substitui a resposta no motor oncológico
+// (ver riskEngine.SUPERSEDES: "pesado na balança").
+//
+// Regra (pura, testável):
+//   - leituras com peso nos últimos `windowDays` (padrão 180);
+//   - pico = maior peso ANTES da última leitura; queda = (pico − último)/pico;
+//   - queda ≥ `threshold` (5%) → { perda_peso_objetiva: { value: 1 } };
+//   - qualquer outro caso → SEM evidência. A balança nunca diz "não
+//     perdeu peso": série velha, curta ou comprada depois da perda não
+//     pode anular um "sim" da pessoa (decisão do controlador, revisão T5).
+const WEIGHT_KEY = 'perda_peso_objetiva';
+
+const weightTrendFromReadings = (readings = [], {
+  now = new Date(), windowDays = 180, threshold = 0.05,
+} = {}) => {
+  const since = now.getTime() - windowDays * 24 * 3600 * 1000;
+  const pts = readings
+    .map(r => ({ at: new Date(r.recordedAt ?? r.at ?? r.date), kg: Number(r.weight ?? r.kg) }))
+    .filter(p => Number.isFinite(p.kg) && p.kg > 0 && !Number.isNaN(p.at.getTime()))
+    .filter(p => p.at.getTime() >= since && p.at.getTime() <= now.getTime())
+    .sort((a, b) => a.at - b.at);
+
+  const empty = { hasData: false, points: pts.length, evidence: {}, summary: null };
+  if (pts.length < 2) return empty;
+
+  const last = pts[pts.length - 1];
+  const before = pts.slice(0, -1);
+  const peak = before.reduce((m, p) => (p.kg > m.kg ? p : m), before[0]);
+  const drop = Math.max(0, (peak.kg - last.kg) / peak.kg);
+  const days = Math.round((last.at - peak.at) / (24 * 3600 * 1000));
+  const spanDays = Math.round((last.at - pts[0].at) / (24 * 3600 * 1000));
+
+  const base = {
+    hasData: true, points: pts.length, firstAt: pts[0].at.toISOString(), lastAt: last.at.toISOString(),
+    peakKg: peak.kg, peakAt: peak.at.toISOString(), lastKg: last.kg,
+    dropPct: Number((drop * 100).toFixed(1)), days, spanDays, threshold,
+  };
+  const fmt = (n) => String(Number(n.toFixed(1))).replace('.', ',');
+  if (drop >= threshold) {
+    return { ...base, lost: true, evidence: { [WEIGHT_KEY]: { value: 1, weight: 1 } },
+      summary: `Balança: perda de ${fmt(drop * 100)}% do peso em ${days} dias (${fmt(peak.kg)} → ${fmt(last.kg)} kg)` };
+  }
+  return { ...base, lost: false, evidence: {}, summary: null };
+};
+
+// Lê os pesos do paciente (VitalSign.weight, qualquer fonte: balança
+// Care Plus, digitação...) e aplica a regra acima.
+const collectWeightTrend = async (patientId, opts = {}) => {
+  const now = opts.now ?? new Date();
+  const windowDays = opts.windowDays ?? 180;
+  const readings = await prisma.vitalSign.findMany({
+    where:   { patientId, weight: { not: null }, recordedAt: { gte: new Date(now.getTime() - windowDays * 24 * 3600 * 1000) } },
+    select:  { weight: true, recordedAt: true },
+    orderBy: { recordedAt: 'asc' },
+  });
+  return weightTrendFromReadings(readings, { ...opts, now, windowDays });
+};
+
 // ─── Helpers internos ──────────────────────────────────────────────
 const pickMaxNumber = (objs, keys) => {
   let best = null;
@@ -219,4 +282,7 @@ module.exports = {
   collectFromDatabase,
   toBayesianEvidence,
   summarizeForPatient,
+  collectWeightTrend,
+  weightTrendFromReadings,
+  WEIGHT_KEY,
 };

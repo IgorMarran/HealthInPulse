@@ -4,8 +4,10 @@
 // P(sintoma | condição) (sensibilidade) e P(sintoma | ¬condição)
 // (1 - especificidade). LR+ é redundante mas guardado para inspeção/debug.
 //
-// Modelos demográficos: priorAdjust permite ajustar o prior em função de
-// idade/sexo/IMC/comorbidades sem reescrever o catálogo inteiro.
+// Os ajustes do prior por idade/sexo/IMC/fumo (o antigo `priorAdjust`)
+// viraram regras em dados: data/chronicPriorRules.js. Este arquivo é a
+// fonte de partida dos sintomas e likelihoods; o motor lê tudo pelo kb
+// normalizado (kb/buildFromSeed.js).
 
 const COMPARATORS = {
   eq:  (a, b) => a === b,
@@ -116,13 +118,7 @@ const CONDITIONS = {
   AOS: {
     code: 'AOS',
     label: 'Apneia Obstrutiva do Sono',
-    prior: { male: 0.32, female: 0.15 },
-    priorAdjust: ({ age, sex, bmi }) => {
-      let p = sex === 'female' ? 0.15 : 0.32;
-      if (age && age > 50) p += sex === 'female' ? 0.10 : 0.13;
-      if (bmi && bmi >= 30) p += 0.10;
-      return Math.min(0.95, p);
-    },
+    basePrior: 0.32, // prior sem fatores; as regras ficam em data/chronicPriorRules.js
     symptoms: {
       [S.RONCO_ALTO]:           { pSx: 0.95, pNoSx: 0.40, lrPos: 2.4  },
       [S.APNEIA_OBSERVADA]:     { pSx: 0.75, pNoSx: 0.06, lrPos: 12.5 },
@@ -141,14 +137,7 @@ const CONDITIONS = {
   CV: {
     code: 'CV',
     label: 'Doença Cardiovascular / HAS',
-    prior: { default: 0.20 },
-    priorAdjust: ({ age, sex }) => {
-      let p = 0.20;
-      if (age && age > 45) p = 0.30;
-      if (age && age > 60) p = 0.45;
-      if (sex === 'male') p += 0.05;
-      return Math.min(0.95, p);
-    },
+    basePrior: 0.20, // prior sem fatores; as regras ficam em data/chronicPriorRules.js
     symptoms: {
       [S.TABAGISMO]:           { pSx: 0.40, pNoSx: 0.20, lrPos: 2.0 },
       [S.HAS_CONHECIDA]:       { pSx: 0.65, pNoSx: 0.30, lrPos: 2.2 },
@@ -169,15 +158,7 @@ const CONDITIONS = {
   DM2: {
     code: 'DM2',
     label: 'Diabetes Mellitus tipo 2',
-    prior: { default: 0.13 },
-    priorAdjust: ({ age, bmi, familyHistoryDm }) => {
-      let p = 0.13;
-      if (age && age > 40) p = 0.15;
-      if (age && age > 60) p = 0.22;
-      if (bmi && bmi >= 30) p += 0.08;
-      if (familyHistoryDm) p += 0.05;
-      return Math.min(0.95, p);
-    },
+    basePrior: 0.13, // prior sem fatores; as regras ficam em data/chronicPriorRules.js
     symptoms: {
       [S.IMC_SOBREPESO]:     { pSx: 0.75, pNoSx: 0.45, lrPos: 1.7  },
       [S.IMC_OBESIDADE]:     { pSx: 0.55, pNoSx: 0.20, lrPos: 2.8  },
@@ -200,13 +181,7 @@ const CONDITIONS = {
   HIPOTIR: {
     code: 'HIPOTIR',
     label: 'Hipotireoidismo',
-    prior: { default: 0.05 },
-    priorAdjust: ({ age, sex }) => {
-      let p = 0.05;
-      if (sex === 'female') p = 0.07;
-      if (age && age > 60) p = sex === 'female' ? 0.12 : 0.08;
-      return Math.min(0.95, p);
-    },
+    basePrior: 0.05, // prior sem fatores; as regras ficam em data/chronicPriorRules.js
     symptoms: {
       [S.FADIGA_DIURNA]:      { pSx: 0.85, pNoSx: 0.65, lrPos: 1.3  },
       [S.GANHO_PESO]:         { pSx: 0.60, pNoSx: 0.30, lrPos: 2.0  },
@@ -230,8 +205,7 @@ const CONDITIONS = {
   SINDMET: {
     code: 'SINDMET',
     label: 'Síndrome Metabólica',
-    prior: { default: 0.40 },
-    priorAdjust: ({ age }) => age && age > 40 ? 0.50 : 0.40,
+    basePrior: 0.40, // prior sem fatores; as regras ficam em data/chronicPriorRules.js
     symptoms: {
       [S.IMC_OBESIDADE]:     { pSx: 0.70, pNoSx: 0.25, lrPos: 2.8 },
       [S.CINTURA_AUMENTADA]: { pSx: 0.80, pNoSx: 0.30, lrPos: 2.7 },
@@ -246,8 +220,7 @@ const CONDITIONS = {
   DEPRESSAO: {
     code: 'DEPRESSAO',
     label: 'Transtorno Depressivo Maior',
-    prior: { default: 0.11 },
-    priorAdjust: ({ age }) => age && age > 50 ? 0.12 : 0.11,
+    basePrior: 0.11, // prior sem fatores; as regras ficam em data/chronicPriorRules.js
     // Os pSx/pNoSx aqui são genéricos — o score PHQ-9 (clinicalScales) é
     // a fonte primária de probabilidade. O motor bayesiano usa estes
     // como reforço, mas a regra final é dominada pela escala.
@@ -268,12 +241,7 @@ const CONDITIONS = {
   ARRITMIA: {
     code: 'ARRITMIA',
     label: 'Arritmias / Fibrilação Atrial',
-    prior: { default: 0.02 },
-    priorAdjust: ({ age }) => {
-      if (age && age > 65) return 0.08;
-      if (age && age > 60) return 0.05;
-      return 0.02;
-    },
+    basePrior: 0.02, // prior sem fatores; as regras ficam em data/chronicPriorRules.js
     symptoms: {
       [S.PALPITACOES]:         { pSx: 0.75, pNoSx: 0.15, lrPos: 5.0 },
       [S.PALP_PAROXISTICAS]:   { pSx: 0.60, pNoSx: 0.10, lrPos: 6.0 },
@@ -292,14 +260,7 @@ const CONDITIONS = {
   DPOC: {
     code: 'DPOC',
     label: 'DPOC',
-    prior: { default: 0.05 },
-    priorAdjust: ({ age, smoker, packYears }) => {
-      let p = 0.05;
-      if (smoker) p = 0.20;
-      if (packYears && packYears >= 10) p = 0.25;
-      if (age && age > 40 && smoker) p = 0.30;
-      return Math.min(0.95, p);
-    },
+    basePrior: 0.05, // prior sem fatores; as regras ficam em data/chronicPriorRules.js
     symptoms: {
       [S.TABAGISMO_PESADO]:    { pSx: 0.85, pNoSx: 0.25, lrPos: 3.4  },
       [S.TOSSE_CRONICA]:       { pSx: 0.75, pNoSx: 0.20, lrPos: 3.75 },
@@ -343,14 +304,6 @@ const correlationMap = (() => {
 
 const getCorrelation = (a, b) => correlationMap.get(a)?.get(b) ?? 0;
 
-// Resolve o prior efetivo de uma condição dado o perfil demográfico
-const resolvePrior = (condCode, profile = {}) => {
-  const cond = CONDITIONS[condCode];
-  if (!cond) return 0.05;
-  if (typeof cond.priorAdjust === 'function') return cond.priorAdjust(profile);
-  return cond.prior?.default ?? 0.05;
-};
-
 const listConditions  = () => Object.values(CONDITIONS);
 const getCondition    = (code) => CONDITIONS[code] || null;
 const allSymptoms     = () => Object.values(S);
@@ -362,7 +315,6 @@ module.exports = {
   COMPARATORS,
   CORRELATIONS,
   getCorrelation,
-  resolvePrior,
   listConditions,
   getCondition,
   allSymptoms,

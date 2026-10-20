@@ -1,10 +1,19 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Eye, EyeOff, Heart, Activity, Sparkles, Stethoscope } from 'lucide-react';
+import { Eye, EyeOff, Heart, Activity, Sparkles, Stethoscope, Microscope, ClipboardCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+// Personas da feira (seed): Roberto (câncer colorretal), Marina, João e a médica
 const DEMO_USERS = [
+  {
+    id: 'roberto',
+    label: 'Roberto Pereira',
+    sub:   'paciente · 63 anos, caso de câncer colorretal',
+    icon:  Microscope,
+    email: 'roberto@healthinpulse.dev',
+    pass:  'Roberto@123',
+  },
   {
     id: 'joao',
     label: 'João Mendes',
@@ -146,6 +155,21 @@ export default function LoginPage() {
             </div>
           </div>
         </div>
+
+        {/* Teste rápido do stand: público, sem login */}
+        <Link
+          to="/teste"
+          className="glass mt-4 p-4 flex items-center gap-3 hover:border-brand-300 hover:bg-brand-50/40 transition-all group"
+        >
+          <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-brand-50 text-brand-700">
+            <ClipboardCheck size={16} />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-medium text-surface-800">Teste rápido de risco</span>
+            <span className="block text-[11px] text-surface-500">2 a 3 minutos, sem login, nada é gravado</span>
+          </span>
+          <span className="text-surface-300 group-hover:text-brand-600 transition-colors">→</span>
+        </Link>
 
         <p className="text-center text-surface-400 text-sm mt-4">
           Não tem conta?{' '}

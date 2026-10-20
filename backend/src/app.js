@@ -15,6 +15,8 @@ const { router: notifRouter }       = require('./routes/notificationRoutes');
 const { router: aiReportRouter }    = require('./routes/aiReportRoutes');
 const { router: appointmentRouter } = require('./routes/appointmentRoutes');
 const { router: wearableRouter }    = require('./routes/wearableRoutes');
+const { router: publicRouter, guard: publicGuard } = require('./routes/publicRoutes');
+const knowledgeRoutes = require('./routes/knowledgeRoutes');
 const goalRoutes    = require('./routes/goalRoutes');
 const rewardRoutes  = require('./routes/rewardRoutes');
 const errorMiddleware = require('./middlewares/errorMiddleware');
@@ -48,13 +50,27 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // ─── parsing ─────────────────────────────────────────────────
+// Teste público (/api/public): rate limit de 300/min e corpo de até 16 KB,
+// antes do parser geral (que pula o corpo já lido).
+app.use('/api/public', publicGuard);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ─── logging HTTP ────────────────────────────────────────────
+// Nunca o corpo. O teste público (/api/public e a página /teste) não entra
+// no log: os materiais da feira prometem que nada do visitante é gravado,
+// nem URL, nem IP.
+const isPublicTest = (req) => {
+  const url = (req.originalUrl || req.url || '').toLowerCase();
+  return url.startsWith('/api/public/')
+    || url === '/teste' || url.startsWith('/teste/') || url.startsWith('/teste?');
+};
 app.use(morgan(
   process.env.NODE_ENV === 'development' ? 'dev' : 'combined',
-  { stream: { write: (msg) => logger.http(msg.trim()) } },
+  {
+    stream: { write: (msg) => logger.http(msg.trim()) },
+    skip:   isPublicTest,
+  },
 ));
 
 // ─── portão da demo pública (só com DEMO_PASSWORD) ───────────
@@ -81,6 +97,8 @@ app.use('/api/appointments',  appointmentRouter);
 app.use('/api/wearables',     wearableRouter);
 app.use('/api/goals',         goalRoutes);
 app.use('/api/rewards',       rewardRoutes);
+app.use('/api/public',        publicRouter);
+app.use('/api/knowledge',     knowledgeRoutes);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date() }));

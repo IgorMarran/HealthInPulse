@@ -1,4 +1,4 @@
-# HealthInPulse v7 — Backend
+# HealthInPulse v8 — Backend
 
 API REST + WebSocket para o sistema de saúde digital HealthInPulse.
 
@@ -39,6 +39,8 @@ Detalhes e alternativas (Codespaces, Docker) no [README da raiz](../README.md#co
 | `AUTH_RATE_LIMIT`    | `30`                    | requisições por 15 min em `/api/auth` (só em produção)     |
 | `FRONTEND_DIST`      | `../frontend/dist`      | build do Vite servido pelo backend, se existir             |
 | `DEMO_PASSWORD`      | vazio                   | senha da turma na frente de tudo (demo pública); vazio = sem portão |
+| `KB_EDIT`            | `true` no .env do setup | só `true` libera editar a Base da IA; ausente/outro valor = só leitura (PATCH e reset dão 403). No Render é `false` |
+| `PUBLIC_RATE_LIMIT`  | `300`                   | requisições por minuto por IP no teste rápido público      |
 
 ---
 
@@ -52,9 +54,16 @@ Detalhes e alternativas (Codespaces, Docker) no [README da raiz](../README.md#co
 | POST   | /api/auth/logout              | Logout                           | Auth     |
 | GET    | /api/patient                  | Perfil do paciente               | PATIENT  |
 | GET    | /api/patient/dashboard        | Dashboard do paciente            | PATIENT  |
+| GET    | /api/patient/risk             | Risco (câncer + crônicas) na hora| PATIENT  |
 | POST   | /api/patient/vitals           | Registrar sinal vital            | PATIENT  |
 | GET    | /api/doctor/dashboard         | Dashboard do médico              | DOCTOR   |
 | GET    | /api/doctor/patients          | Lista pacientes vinculados       | DOCTOR   |
+| GET    | /api/doctor/patients/:id/risk | Risco do paciente (só vinculado) | DOCTOR   |
+| GET    | /api/knowledge                | Base da IA (+ `editable`)        | DOCTOR   |
+| PATCH  | /api/knowledge/<entidade>/:id | Edita a base (com histórico)     | DOCTOR   |
+| GET    | /api/knowledge/history        | Histórico de edições             | DOCTOR   |
+| POST   | /api/knowledge/reset          | Volta a base ao padrão           | DOCTOR   |
+| POST   | /api/public/quick-test        | Teste rápido sem estado (/teste) | Público  |
 | POST   | /api/exams                    | Upload de exame (multipart)      | PATIENT  |
 | POST   | /api/triage                   | Submeter triagem                 | PATIENT  |
 | POST   | /api/ai-reports/generate/:id  | Gerar relatório completo (IA)    | DOCTOR   |
@@ -79,12 +88,12 @@ Detalhes e alternativas (Codespaces, Docker) no [README da raiz](../README.md#co
 
 | Evento              | Direção         | Descrição                           |
 |---------------------|-----------------|-------------------------------------|
-| `vital:new`         | Server → Doctor | Novo sinal vital registrado         |
+| `vital:new`         | Server → Doctor | Novo sinal vital (só médicos vinculados) |
 | `vital:alert`       | Server → Patient| Alerta de sinal vital anormal       |
-| `patient:critical`  | Server → Doctors| Paciente em estado crítico          |
+| `patient:critical`  | Server → Doctor | Paciente crítico (só médicos vinculados) |
 | `exam:processed`    | Server → Patient| Exame processado pela IA            |
 | `triage:completed`  | Server → Patient| Análise de triagem concluída        |
-| `triage:alert`      | Server → Doctors| Triagem com risco alto/crítico      |
+| `triage:alert`      | Server → Doctor | Triagem alta/crítica (só médicos vinculados) |
 | `appointment:new`   | Server → Doctor | Nova consulta agendada              |
 | `appointment:updated`| Server → Both  | Status de consulta alterado         |
 | `notification:new`  | Server → User   | Nova notificação em tempo real      |

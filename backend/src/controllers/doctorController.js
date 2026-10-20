@@ -1,4 +1,5 @@
 const doctorService = require('../services/doctorService');
+const riskService   = require('../services/riskService');
 
 const getProfile = async (req, res, next) => {
   try {
@@ -70,8 +71,17 @@ const getPatientHistory = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// Painel de risco do paciente (câncer + crônicas), só com vínculo
+const getPatientRisk = async (req, res, next) => {
+  try {
+    const doctor = await doctorService.getProfile(req.user.id);
+    await doctorService.assertLink(doctor.id, req.params.patientId);
+    res.json(await riskService.assessPatient(req.params.patientId));
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   getProfile, updateProfile, updateAvatar, getDashboard,
   getPatients, getPatientDetail, linkPatient, unlinkPatient,
-  getPatientConsolidated, getPatientHistory,
+  getPatientConsolidated, getPatientHistory, getPatientRisk,
 };

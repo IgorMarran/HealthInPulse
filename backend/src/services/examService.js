@@ -55,12 +55,18 @@ const processExam = async (examId, filePath, fileType, patientId) => {
       }),
     ]);
 
-    // Notifica via socket
+    // Notifica via socket. A sala é por usuário (`user:<userId>`), não
+    // pelo id do Patient.
     try {
-      getIO().to(`user:${patientId}`).emit('exam:processed', {
-        examId,
-        riskLevel: analysis.riskLevel,
+      const patient = await prisma.patient.findUnique({
+        where: { id: patientId }, select: { userId: true },
       });
+      if (patient) {
+        getIO().to(`user:${patient.userId}`).emit('exam:processed', {
+          examId,
+          riskLevel: analysis.riskLevel,
+        });
+      }
     } catch (_) {}
 
   } catch (err) {

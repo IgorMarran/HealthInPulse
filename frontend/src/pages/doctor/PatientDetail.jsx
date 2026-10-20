@@ -8,9 +8,9 @@ import {
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { RISK_CLASS, RISK_LABEL } from '@/lib/risk';
+import RiskPanel from '@/components/risk/RiskPanel';
 
-const RISK_CLASS = { LOW:'badge-low', MODERATE:'badge-moderate', HIGH:'badge-high', CRITICAL:'badge-critical' };
-const RISK_LABEL = { LOW:'Baixo', MODERATE:'Moderado', HIGH:'Alto', CRITICAL:'Crítico' };
 
 function VitalMini({ icon: Icon, label, value, unit }) {
   if (!value) return null;
@@ -69,6 +69,12 @@ export default function PatientDetail() {
           <Brain size={14} /> Gerar relatório
         </Link>
       </div>
+
+      {/* Painel de riscos: calculado na hora, "Recalcular" busca de novo */}
+      <RiskPanel
+        load={() => doctorService.getPatientRisk(patientId)}
+        deps={[patientId]}
+      />
 
       {/* Info chips */}
       <div className="flex flex-wrap gap-2">

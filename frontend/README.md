@@ -1,4 +1,4 @@
-# HealthInPulse v7 — Frontend
+# HealthInPulse v8 — Frontend
 
 Interface React do sistema de saúde digital HealthInPulse.
 

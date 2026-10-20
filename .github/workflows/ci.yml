@@ -44,11 +44,28 @@ jobs:
       - name: Setup é idempotente (rodar de novo não quebra)
         run: npm run setup
 
+      # Motor, base de conhecimento, exames, rastreamento e personas da
+      # feira (inclui o seed num SQLite temporário). Precisa do Prisma
+      # Client gerado pelo setup.
+      - name: Testes unitários (npm test)
+        run: npm test
+
       - name: Build do frontend
         run: npm run build
 
       - name: Smoke test (backend real + frontend servido)
         run: npm run smoke
+
+      # O comando do stand de ponta a ponta: gera o client, zera e popula o
+      # banco, builda, sobe em modo produção, confere /health, /teste, login
+      # da médica e a Base da IA editável, e encerra.
+      # O frontend já foi buildado no passo acima: --skip-build evita refazer
+      # o build (no Windows chega a estourar o timeout de 15 min).
+      - name: Stand (npm run stand -- --check)
+        run: npm run stand -- --check --skip-build
+
+      - name: Stand mantendo o banco (--keep-db)
+        run: npm run stand -- --keep-db --check --skip-build
 
   docker:
     name: imagem Docker

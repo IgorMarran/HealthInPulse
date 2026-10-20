@@ -19,7 +19,19 @@ const logger    = require('../utils/logger');
 
 const COOKIE      = 'demo_access';
 const MAX_AGE_MS  = 30 * 24 * 60 * 60 * 1000; // 30 dias
-const OPEN_PATHS  = new Set(['/health', '/demo-access']);
+const OPEN_PATHS  = new Set(['/health', '/demo-access', '/favicon.svg']);
+// Teste público do stand (/teste, aberto pelo QR): a página, os arquivos
+// do build e a API dele passam sem senha. Por prefixo: '/teste' libera
+// '/teste' e '/teste/...', mas não '/testes'. O favicon é exato (acima).
+const OPEN_PREFIXES = ['/teste', '/assets/', '/api/public/'];
+// Caminho com `..` (cru ou codificado) nunca é aberto: o express.static e
+// o SPA normalizam `/teste/../api/...` e o prefixo enganaria o portão.
+const TRAVERSAL = /\/\.\.|%2e/i;
+const isOpen = (p) => {
+  if (typeof p !== 'string' || TRAVERSAL.test(p)) return false;
+  return OPEN_PATHS.has(p) || OPEN_PREFIXES.some((pre) =>
+    p === pre || p.startsWith(pre.endsWith('/') ? pre : `${pre}/`));
+};
 
 // Trocar a senha invalida os cookies já emitidos
 const sign = (password) => crypto
@@ -143,7 +155,7 @@ const demoGate = () => {
   );
 
   router.use((req, res, next) => {
-    if (OPEN_PATHS.has(req.path)) return next();
+    if (isOpen(req.path)) return next();
 
     const cookie = readCookie(req, COOKIE);
     if (cookie && safeEqual(cookie, token)) return next();
@@ -159,3 +171,4 @@ const demoGate = () => {
 };
 
 module.exports = demoGate;
+module.exports.isOpen = isOpen;

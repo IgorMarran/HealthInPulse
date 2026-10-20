@@ -1,6 +1,7 @@
 const { Router }    = require('express');
 const prisma         = require('../config/database');
 const patientService = require('../services/patientService');
+const doctorService  = require('../services/doctorService');
 const openaiService  = require('../services/openaiService');
 const { getIO }      = require('../config/socket');
 const { body }       = require('express-validator');
@@ -96,10 +97,13 @@ const analyzeAndAlert = async (patientId, vital) => {
     const analysis = await openaiService.analyzeVitalSign(vital, patient);
 
     if (analysis.alert && analysis.severity !== 'none') {
+      // A sala do socket e a notificação são do User do paciente, não do Patient
+      const { userId } = await prisma.patient.findUnique({ where: { id: patientId }, select: { userId: true } });
+
       // Cria notificação persistida
       await prisma.notification.create({
         data: {
-          userId:   (await prisma.patient.findUnique({ where: { id: patientId }, select: { userId: true } })).userId,
+          userId,
           type:     analysis.severity === 'high' ? 'CRITICAL' : 'ALERT',
           title:    'Alerta de sinal vital',
           message:  analysis.message,
@@ -108,15 +112,15 @@ const analyzeAndAlert = async (patientId, vital) => {
       });
 
       // Push em tempo real
-      getIO().to(`user:${patientId}`).emit('vital:alert', {
+      getIO().to(`user:${userId}`).emit('vital:alert', {
         severity: analysis.severity,
         message:  analysis.message,
         vital,
       });
 
-      // Se crítico, avisa médicos também
+      // Se crítico, avisa os médicos vinculados (só a sala de cada um)
       if (analysis.severity === 'high') {
-        getIO().to('doctors').emit('patient:critical', { patientId, vital, message: analysis.message });
+        await doctorService.emitToLinkedDoctors(patientId, 'patient:critical', { patientId, vital, message: analysis.message });
       }
     }
   } catch (err) {

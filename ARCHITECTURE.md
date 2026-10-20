@@ -1,4 +1,4 @@
-# Arquitetura — HealthInPulse v7
+# Arquitetura — HealthInPulse v8
 
 Como o sistema está montado: camadas, fluxos críticos, modelo de dados, design
 system e decisões técnicas que sustentam o demo.
@@ -21,17 +21,89 @@ system e decisões técnicas que sustentam o demo.
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Express  (porta 3000)                                              │
 │  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  middlewares: helmet · cors · morgan · rate-limit (prod)     │   │
-│  │              · auth (JWT) · validation · error handler      │   │
+│  │  middlewares: helmet · cors · rate-limit (auth em prod;      │   │
+│  │              /api/public sempre) · morgan · demoGate ·       │   │
+│  │              auth (JWT) · validation · error handler        │   │
 │  └──────────────────────────────────────────────────────────────┘   │
 │                                                                     │
 │  routes ──► controllers ──► services ──► Prisma Client ──► SQLite   │
 │                                  │                                  │
-│                                  └─► openaiService                  │
-│                                       ├─ HAS_KEY ? GPT-4o           │
-│                                       └─ else: aiSimulator (local)  │
+│                  │               └─► openaiService                  │
+│                  │                    ├─ HAS_KEY ? GPT-4o           │
+│                  │                    └─ else: aiSimulator (local)  │
+│                  └─► services/clinical (motor puro) ◄─ kbRepository │
+│                                          (base no SQLite, em cache) │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+Em produção (`NODE_ENV=production`) o mesmo Express serve o `frontend/dist`
+(um processo, uma porta, sem CORS). É assim no Docker, no Render e no
+`npm run stand`.
+
+---
+
+## Motor clínico e base de conhecimento (v8)
+
+A v8 tirou os parâmetros do código e os pôs no banco. O motor continua puro
+(recebe um `kb` e os dados da pessoa, devolve números), mas o `kb` agora é uma
+tabela editável, com fonte em cada valor.
+
+```
+ JS (dados de partida)                      SQLite (editável)
+  clinical/matrix.js, questions.js           ClinicalSource, Condition, PriorRule,
+  data/chronicCatalog.js                     Symptom, ConditionSymptom, LabRule,
+  data/chronicPriorRules.js                  ScreeningRule, KnowledgeVersion
+  data/oncology.js  (5 cânceres)                    ▲            │
+        └── kb/buildFromSeed.js ── seedKnowledge ───┘            │ kb/kbRepository.js
+                    │                                            ▼   get() em cache,
+                    └─────────── mesmo formato de kb ──────► motor     invalidate() ao editar
+```
+
+- **Base:** 13 condições (8 crônicas e 5 cânceres: colorretal, pulmão, mama,
+  próstata, colo do útero), 43 fontes, 118 regras de prior, 95 sintomas, 110
+  likelihoods, 10 regras de exame e 12 de rastreamento. Os números dos cânceres
+  e suas fontes estão em [`Docs/base-clinica-oncologia.md`](./Docs/base-clinica-oncologia.md).
+  O `buildFromSeed` (JS) e o banco geram o **mesmo** `kb`; um teste confere.
+- **`kbRepository`:** `get()` lê as 7 tabelas e a versão numa transação só e
+  guarda em cache (congelado) até `invalidate()`. A versão do kb é o maior
+  `KnowledgeVersion.version` (0 sem edições). `resetToDefaults()` regrava a base
+  do JS e registra o reset (a versão sobe, nunca volta).
+- **`ensureSeeded()` (no start do `server.js`):** banco novo ou nunca editado
+  fica igual ao seed do JS; base já editada pela médica só ganha o que falta,
+  **sem sobrescrever** o que ela mudou. O caminho de volta é "Restaurar padrão".
+  Já o `npm run db:seed` manual faz upsert da base inteira e **desfaz** edições
+  nos itens que existem no código (o histórico fica). Banco criado antes do
+  schema novo (P2021/P2022) falha com a instrução de rodar `npm run setup`.
+- **Regra do modelo:** fatores demográficos e de risco entram **só no prior**
+  (`PriorRule`); sintomas, exames e balança entram **só como likelihood**. Nada
+  é contado duas vezes. Um teste garante.
+
+Peças do motor (`backend/src/services/clinical/`):
+
+| Módulo               | O que faz                                                                   |
+|----------------------|-----------------------------------------------------------------------------|
+| `bayes.js`           | `createEngine(kb, {categories})`: prior, posterior, ganho de informação. A fase crônica da v7 saiu daqui idêntica (golden test) |
+| `riskEngine.js`      | `assess`: risco de cada condição com o "por quê" fator a fator, risco relativo à média da idade e sexo, categoria ROTINA/ATENÇÃO/INVESTIGAR |
+| `questionRunner.js`  | escolhe a próxima pergunta dos cânceres (`Σ|ln LR+|/custo`, só os elegíveis por idade e sexo); a entropia global ignoraria P≈0,2% |
+| `labEvidence.js`     | exames (`ExamResult.findings`) → evidência, conforme as `LabRule`           |
+| `wearableEvidence.js`| pulseira e, nos cânceres, a **tendência de peso** da balança (queda ≥ 5% em até 180 dias vira `perda_peso_objetiva`) |
+| `screening.js`       | `ScreeningRule` → o que fazer agora, discutir com o médico ou no futuro      |
+| `redFlags.js`        | sinais de alarme, **em código** (a Base da IA só os lista)                   |
+| `profile.js`         | `ageFromDob`, `mapGender`, `computeBmi`, `normalizeProfile`                 |
+
+Classificação oncológica própria: **INVESTIGAR** se P ≥ 3% (limiar do NICE
+NG12), **ATENÇÃO** se P ≥ 1% ou risco relativo ≥ 2, senão **ROTINA**. No banco e
+nos alertas isso vira HIGH, MODERATE e LOW. O número é a chance estimada de
+diagnóstico em 2 anos (estimativa didática); acima de 20% a UI mostra "≥20%".
+
+### Quem usa o motor
+
+| Consumidor                  | Rota / tela                                  | Observação                                   |
+|-----------------------------|----------------------------------------------|----------------------------------------------|
+| Triagem do paciente         | `/api/triage/*` · `patient/Triage.jsx`       | fase crônica + fase oncológica; grava         |
+| Teste rápido público        | `POST /api/public/quick-test` · `/teste`     | sem login, **sem estado, nada é gravado**     |
+| Painel de riscos            | `GET /api/patient/risk` · `GET /api/doctor/patients/:id/risk` | calculado na hora (`riskService`) |
+| Base da IA (médica)         | `/api/knowledge/*` · `doctor/Knowledge.jsx`  | edita a base; simula em paciente             |
 
 ---
 
@@ -70,7 +142,10 @@ faria delega + tratamento de erro repetitivo.
 | `patientService`  | perfil + sinais vitais + dashboard (com 30d de tendência)           |
 | `doctorService`   | perfil + pacientes vinculados + dashboard + consolidated + history  |
 | `examService`     | upload + processamento async (OCR + IA) + listagem                  |
-| `triageService`   | banco de perguntas + submit + análise async + geração de metas      |
+| `triageService`   | triagem adaptativa em 2 fases (crônica e oncológica) + resultado + metas + alerta à médica |
+| `riskService`     | painel de riscos: cadastro + última triagem + exames + balança → `riskEngine.assess` |
+| `quickTestService`| teste rápido público: `run(kb, {profile, answers})` → próxima etapa     |
+| `knowledgeService`| Base da IA: leitura, edição com histórico (`KnowledgeVersion`), reset e `KB_EDIT` |
 | `goalService`     | CRUD de metas + cálculo de progresso + geração via triagem          |
 | `coinService`     | credit/debit/balance/history (sempre em transação)                  |
 | `rewardService`   | catálogo + redeem (transacional)                                    |
@@ -81,10 +156,12 @@ faria delega + tratamento de erro repetitivo.
 
 ```
 /api/auth          → register, login, refresh, logout, me, change-password
-/api/patient       → perfil + sinais vitais + dashboard do paciente
-/api/doctor        → perfil + pacientes + dashboard + consolidated + history
+/api/patient       → perfil + sinais vitais + dashboard + risk (painel de riscos)
+/api/doctor        → perfil + pacientes + dashboard + consolidated + history + patients/:id/risk
 /api/exams         → upload + listagem + acesso médico
-/api/triage        → questions + submit + history + getOne
+/api/triage        → questions + start + answer (uma pergunta por vez) + history + getOne
+/api/public        → quick-test  (sem login; sem estado, nada gravado)
+/api/knowledge     → Base da IA: get + history + patch por entidade + reset  (só DOCTOR; edição exige KB_EDIT)
 /api/notifications → list + unread-count + markRead + markAllRead
 /api/ai-reports    → list/get (paciente) + generate/get (médico)
 /api/appointments  → create + list + updateStatus
@@ -138,14 +215,14 @@ main.jsx
 ```
 src/pages/
 ├── auth/
-│   ├── LoginPage.jsx        ← 3 cards demo + form clássico
+│   ├── LoginPage.jsx        ← 4 cards demo (Roberto, João, Marina, Dra. Ana) + link do /teste
 │   └── RegisterPage.jsx     ← cadastro role-aware (paciente/médico)
 ├── patient/
 │   ├── Dashboard.jsx        ← hero + score animado + 5 vitais + gráficos 30d
 │   ├── Goals.jsx            ← metas com barras de progresso + confetti
 │   ├── Rewards.jsx          ← loja Care Plus (catálogo + meus resgates)
 │   ├── Exams.jsx            ← upload + lista com status async
-│   ├── Triage.jsx           ← wizard de 10 perguntas + resultado IA
+│   ├── Triage.jsx           ← perfil + etapa 1/2 (crônicas) + etapa 2/2 (câncer) + resultado
 │   ├── Reports.jsx          ← lista de relatórios IA + modal
 │   ├── Appointments.jsx     ← lista de consultas
 │   └── Profile.jsx
@@ -157,9 +234,18 @@ src/pages/
 │   ├── Reports.jsx          ← seletor + síntese IA + gerar nova
 │   ├── History.jsx          ← seletor + timeline filtrada por tipo
 │   ├── Appointments.jsx     ← agenda + ações (confirmar/cancelar/concluir)
+│   ├── Knowledge.jsx        ← Base da IA: edição na linha, histórico, restaurar, simular em paciente
 │   ├── Reference.jsx        ← Base Clínica (do livro de fisiologia)
 │   ├── Profile.jsx
 │   └── PatientSelector.jsx  ← componente shared para Wearable/Reports/History
+└── public/
+    ├── QuickTest.jsx        ← /teste: teste rápido sem login (modo quiosque com ?kiosk=1)
+    └── personas.js          ← personas da equipe que preenchem o teste
+
+src/components/risk/          ← RiskPanel (PatientDetail), ConditionRiskCard, RiskExplanation,
+                                ScreeningList, FrequencyDots (reaproveitados no /teste e na triagem)
+src/lib/risk.js               ← categorias, risco relativo e frequência natural por público
+                                (o visitante nunca vê o % nem vermelho; a médica vê o % em 2 anos)
 ```
 
 ---
@@ -220,36 +306,81 @@ PatientDashboard
 Os **gráficos grandes de 30 dias** (PA + glicose) não são "live" — usam dados
 históricos persistidos no banco. Coerente: histórico não muda a cada segundo.
 
-### 3. Triagem com IA (com fallback)
+### 3. Triagem adaptativa (crônicas + câncer)
+
+A triagem é uma sessão guardada em `TriageAnswer.answers` (o estado inteiro:
+perfil, respostas, fase). Cada chamada retoma de lá; não há estado em memória.
 
 ```
-PatientTriage submit(answers)
-  └─ POST /api/triage  { answers: [{questionId, answer}, ...] }
-       └─ triageService.submitTriage
-            ├─ cria TriageAnswer status=IN_PROGRESS
-            └─ processTriageAnalysis (async, não bloqueia)
-                 ├─ openaiService.analyzeTriageAnswers
-                 │   ├─ HAS_KEY? → GPT-4o
-                 │   └─ else    → aiSimulator (keywords + heurística)
-                 ├─ atualiza TriageAnswer: COMPLETED + riskLevel + score
-                 ├─ cria AiReport (type=triage)
-                 ├─ goalService.generateGoalsFromTriage  ← cria 4-5 metas
-                 ├─ coinService.credit +20 (bônus triagem)
-                 └─ Socket.io emit triage:completed
-       ◄── 202 { triage }
+PatientTriage
+  ├─ POST /api/triage/start            → { stage: PROFILE, schema, ... }
+  ├─ POST /api/triage/:id/answer       → { stage: QUESTION | RESULT, ... }  (repete)
+  └─ resultado: stage RESULT
 
-PatientTriage então faz polling a /api/triage/:id até riskLevel ficar setado
-(até 10 tentativas com 800ms) → mostra modal de resultado com confetti.
+Estados: COLLECT_PROFILE → INTERVIEW (crônica) → ONCO_INTERVIEW → COMPLETED
+         (RED_FLAG interrompe em qualquer fase)
 ```
 
-O simulador local **distingue** 4 níveis de risco:
-- `LOW`     — sem queixas relevantes
-- `MODERATE` — sintomas comuns (febre, náusea, dor de cabeça)
-- `HIGH`    — sinais de alarme (dor no peito, falta de ar grave)
-- `INCONCLUSIVE` — respostas insuficientes / texto curto demais
+- **Perfil** (idade, sexo, altura, peso, fumo, álcool, história familiar de
+  câncer, Papanicolau...) vira o prior. Evidência da pulseira entra no Bayes.
+- **Fase crônica** ("etapa 1 de 2"): a próxima pergunta é a de maior ganho de
+  informação por custo; encerra com posterior ≥ 80% ou 18 perguntas. Idêntica à
+  v7 (golden test); as escalas (STOP-BANG, PHQ-9, FINDRISC, Framingham) reforçam o nível.
+- **Fase oncológica** ("etapa 2 de 2", `ONCO_INTERVIEW`): até 6 perguntas do
+  painel `ONCOLOGIA`, escolhidas pelo `questionRunner`. Dá para desligar com
+  `ONCO_PHASE_ENABLED = false` em `triageService.js`.
+- **Red flag** (suspeita de IAM, AVC, ideação suicida, neoplasia etc.) interrompe e devolve a urgência,
+  mas o risco oncológico do que já foi respondido continua no resultado.
+- **`finalize`:** `riskEngine.assess` junta perfil, respostas, **exames**
+  (`labEvidence`) e **tendência de peso** (balança). O nível final é o maior
+  entre o crônico e o oncológico (ROTINA não sobe; ATENÇÃO sobe até MODERATE;
+  INVESTIGAR até HIGH). Grava `COMPLETED` + `AiReport` (`triage`), gera as
+  metas, dá o bônus de coins e emite `triage:completed` ao paciente.
+- **Alerta à médica:** nível HIGH/CRITICAL (inclusive câncer em INVESTIGAR)
+  emite `triage:alert` **só** para a sala `user:<userId>` de cada médico
+  vinculado (nunca para uma sala geral). Câncer em INVESTIGAR cria também uma
+  `Notification` ALERT. A tela mostra um toast na `DoctorLayout`.
+- Confete só quando não há risco nenhum (crônico baixo, câncer em ROTINA e sem red flag).
 
-Quando `INCONCLUSIVE`, a UI mostra mensagem amigável e a meta gerada é
-"refazer triagem em 7 dias".
+Sem `OPENAI_API_KEY` o sistema inteiro funciona: a triagem **não usa** LLM, só
+o motor local; o `aiSimulator` cobre relatórios e exames.
+
+### 3b. Teste rápido público (`/teste`)
+
+```
+/teste (QuickTest.jsx)
+  └─ POST /api/public/quick-test  { profile, answers }   a cada tela
+       ├─ publicRoutes: rate limit 300/min por IP (PUBLIC_RATE_LIMIT), corpo ≤ 16 KB,
+       │                campo fora da lista → 422
+       └─ quickTestService.run(kb, { profile, answers })
+            ├─ falta idade/sexo → { stage: PROFILE, schema }
+            ├─ menor de 18      → { stage: BLOCKED }
+            ├─ questionRunner.next (painel RAPIDO, até 8) → { stage: QUESTION, reason }
+            └─ riskEngine.assess → { stage: RESULT, oncology, screening, modifiable }
+```
+
+Sem estado: o cliente reenvia tudo o que já respondeu e o servidor devolve a
+próxima etapa. **Nada é gravado e o corpo não vai para o log.** Red flag encerra
+na hora. O `null` ("não sei") conta como respondida e não vira evidência.
+
+### 3c. Base da IA (edição pela médica)
+
+```
+doctor/Knowledge.jsx
+  ├─ GET   /api/knowledge             → base + editable + campos editáveis
+  ├─ PATCH /api/knowledge/<entidade>/:id  { campo: valor, changeNote }
+  │     requireEditable (KB_EDIT) → validação → knowledgeService.patch
+  │       (transação: atualiza + 1 KnowledgeVersion por campo) → kbRepository.invalidate()
+  ├─ POST  /api/knowledge/reset       → volta aos valores do JS
+  └─ GET   /api/knowledge/history
+```
+
+A próxima triagem, teste rápido ou painel de riscos já usa o `kb` novo. Entidades
+editáveis: `conditions`, `prior-rules`, `condition-symptoms`, `lab-rules`,
+`screening-rules` (valores, textos e ativo/inativo; a estrutura das regras, `when`,
+`effect`, `operator` e `kind`, não). **Fail-closed:** só `KB_EDIT=true` (ou 1, yes,
+on) libera PATCH e reset; sem a variável é só leitura (403). A edição fica
+desligada no Render e no Docker, e ligada no `.env` local e no `npm run stand`.
 
 ### 4. Gamificação (metas → coins → recompensas)
 
@@ -312,7 +443,22 @@ User ─┬─ 1:1 ─ Patient ─┬─ 1:n ─ VitalSign
       └─ 1:n ─ RefreshToken
 
 Reward ─ 1:n ─ RewardRedemption
+
+Base de conhecimento do motor clínico (chaves por código, não UUID):
+Condition ─┬─ 1:n ─ PriorRule
+           ├─ 1:n ─ ConditionSymptom ─ n:1 ─ Symptom ─ 1:n ─ LabRule
+           └─ 1:n ─ ScreeningRule
+ClinicalSource ─ 1:n ─ (Condition, PriorRule, ConditionSymptom, LabRule, ScreeningRule)
+KnowledgeVersion   histórico de edições; o maior `version` é a versão do kb
 ```
+
+A base nasce do JS (`services/clinical/kb/buildFromSeed.js`), é gravada por
+`prisma/seedKnowledge.js` (modos `upsert`, `missing` e `replace`) e lida pelo
+motor via `services/clinical/kb/kbRepository.js` (em cache até a próxima edição).
+Veja [Motor clínico e base de conhecimento](#motor-clínico-e-base-de-conhecimento-v8)
+para o que o `ensureSeeded()` e o `db:seed` fazem com edições da médica. Na triagem,
+o estado da sessão (inclusive o perfil de risco e o resultado oncológico) fica
+em `TriageAnswer.answers`; o `Patient` não mudou.
 
 ### Particularidades do SQLite
 
@@ -375,7 +521,11 @@ de página, modais e cards "ao vivo".
 | **Saldo de coins desnormalizado**      | Performance de leitura. Integridade via transações.                 |
 | **Route-as-controller** em alguns módulos | Casos pequenos não merecem 3 arquivos.                            |
 | **Hooks no topo do componente**        | Regras do React. Aprendido na marra com 2 incidentes de tela branca. |
-| **Polling após submit de triagem**     | Análise IA é async (200ms-2s). Polling simples evita complicar com socket. |
+| **Triagem em passos (start/answer)**   | Cada resposta devolve a próxima etapa; o estado da sessão vive em `TriageAnswer.answers`, sem memória no servidor. |
+| **Parâmetros clínicos no banco**       | A médica edita e o resultado muda na hora; cada número tem fonte e o histórico fica em `KnowledgeVersion`. |
+| **Câncer como triagem de risco**       | Prior por idade e sexo (INCA/GLOBOCAN) × fatores, likelihoods publicados; categoria e exame de rastreamento, sem prometer diagnóstico. |
+| **Teste público sem estado**           | Nada de visitante é gravado nem logado; o cliente reenvia as respostas a cada chamada. |
+| **Edição da base fail-closed**         | Só `KB_EDIT=true` edita; a demo pública (cadastro de médica aberto) fica só leitura. |
 
 ---
 
@@ -386,9 +536,36 @@ de página, modais e cards "ao vivo".
 | Como o login funciona ponta-a-ponta     | `services/index.js` → `services/authService.js`            |
 | A pulseira em tempo real                | `hooks/useLiveVitals.js`                                   |
 | Como uma meta é concluída e coins entram| `services/goalService.js::updateProgress`                  |
-| Como a triagem gera metas               | `services/triageService.js::processTriageAnalysis`         |
+| Como a triagem decide e fecha           | `services/triageService.js::advance` e `finalize`          |
+| O risco de câncer e o "por quê"         | `services/clinical/riskEngine.js::assess`                  |
+| O teste público do stand                | `services/quickTestService.js` + `routes/publicRoutes.js`  |
+| A base de conhecimento                  | `services/clinical/kb/kbRepository.js` + `prisma/seedKnowledge.js` |
+| A edição da Base da IA                  | `services/knowledgeService.js` + `pages/doctor/Knowledge.jsx` |
+| Os números dos cânceres                 | `services/clinical/data/oncology.js` + `Docs/base-clinica-oncologia.md` |
 | A linha do tempo do paciente            | `services/doctorService.js::getPatientHistory`             |
 | O design system                         | `frontend/tailwind.config.js` + `frontend/src/index.css`   |
 | As referências clínicas                 | `frontend/src/pages/doctor/Reference.jsx` + `Docs/*.docx`  |
 
 Para regras clínicas detalhadas, veja **[BUSINESS_RULES.md](./BUSINESS_RULES.md)**.
+
+---
+
+## Execução: local, stand e Render
+
+| Ambiente         | Como sobe              | Banco                           | `KB_EDIT` | Portão de senha |
+|------------------|------------------------|---------------------------------|-----------|-----------------|
+| Dev              | `npm run dev` (API :3000 + Vite :5173) | `dev.db`, mantido | `true` (setup) | não |
+| Stand (notebook Windows, offline) | `npm run stand` (:3000) | zerado e populado a cada subida (`--keep-db` mantém) | `true` (forçado) | **nunca** (limpo do ambiente e do `.env`) |
+| Docker           | `docker compose up`    | volume                          | desligado | opcional (`DEMO_PASSWORD`) |
+| Render (QR)      | Blueprint (`render.yaml`) | recriado a cada restart       | `false`   | vazio na feira  |
+
+O `npm run stand` (`scripts/stand.mjs`, reaproveita `scripts/setup.mjs`) gera o
+Prisma Client, zera e popula o banco, faz o build, sobe o servidor em modo
+produção com `AUTH_RATE_LIMIT=1000`, `OPENAI_API_KEY` vazia e sem rede para o
+Prisma, e imprime o endereço local, o IP da rede e o link do Render. Com
+`--check` ele sobe, confere `/health`, `/teste`, o login da médica e a Base da
+IA editável, e encerra (é o que o CI roda). O Render é Docker no plano grátis
+(dorme após 15 min, por isso o keep-warm em `/health`). `npm run qr` gera o QR
+do `/teste` para o banner. Detalhes no [README](./README.md#feira-stand).
+
+Para o checklist, o roteiro e o pitch, veja [`Docs/feira/`](./Docs/feira/).

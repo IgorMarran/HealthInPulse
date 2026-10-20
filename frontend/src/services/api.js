@@ -52,8 +52,12 @@ api.interceptors.response.use(
       return api(original);
     } catch {
       flush(null);
-      localStorage.clear();
-      window.location.href = '/login';
+      // No teste público (/teste) não derruba a sessão nem redireciona
+      const path = window.location.pathname;
+      if (path !== '/teste' && !path.startsWith('/teste/')) {
+        localStorage.clear();
+        window.location.href = '/login';
+      }
       return Promise.reject(err);
     } finally {
       refreshing = false;

@@ -3,6 +3,10 @@ import { authService, coinService } from '@/services';
 
 const AuthContext = createContext(null);
 
+// Rotas que funcionam sem login e não devem mexer na sessão
+export const isPublicPath = (path = window.location.pathname) =>
+  path === '/teste' || path.startsWith('/teste/');
+
 export function AuthProvider({ children }) {
   const [user,    setUser]    = useState(null);
   const [loading, setLoading] = useState(true);
@@ -10,6 +14,10 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
     if (!token) { setLoading(false); return; }
+    // Teste público (/teste): não precisa de sessão. Um token velho (o
+    // `npm run stand` reseta o banco) faria me() → 401 → refresh falho →
+    // redirecionar para /login no meio do teste do visitante.
+    if (isPublicPath()) { setLoading(false); return; }
 
     authService.me()
       .then(({ data }) => setUser(data.user))

@@ -23,6 +23,9 @@ router.patch('/avatar', avatarUpload.single('avatar'), ctrl.updateAvatar);
 // ─── Dashboard ───────────────────────────────────────────────
 router.get('/dashboard', ctrl.getDashboard);
 
+// ─── Risco (câncer + crônicas, calculado na hora) ────────────
+router.get('/risk', ctrl.getRisk);
+
 // ─── Sinais Vitais ───────────────────────────────────────────
 router.get('/vitals',        ctrl.getVitalSigns);
 router.get('/vitals/latest', ctrl.getLatestVitals);
