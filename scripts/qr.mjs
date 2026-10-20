@@ -7,6 +7,9 @@
 //   npm run qr -- URL --pdf                      também regera o Docs/feira/banner.pdf
 //                                                 (precisa do Chrome, Chromium ou Edge)
 //
+// Com URL explícita, também troca o padrão em frontend/src/config.js (QR da tela,
+// fixo no build: rode `npm run build` depois) e em scripts/stand.mjs (aviso do terminal).
+//
 // Depois de trocar a URL: conferir o PDF e apontar a câmera do celular para o QR.
 
 import { spawnSync } from 'node:child_process';
@@ -65,6 +68,28 @@ if (existsSync(BANNER)) {
   } else if (!html.includes('<!--qr-url-->')) {
     console.warn('Aviso: banner.html sem o marcador <!--qr-url-->; o texto da URL não foi trocado.');
   }
+}
+
+// ─── Outros dois lugares com a URL padrão ───────────────────────────
+// config.js (QR da tela do /teste) e stand.mjs (texto do terminal). Só com URL
+// explícita; troca apenas a string padrão entre aspas simples.
+if (args.some((a) => !a.startsWith('--'))) {
+  const trocar = (arquivo, re, novo) => {
+    if (!existsSync(arquivo)) return;
+    const txt = readFileSync(arquivo, 'utf8');
+    const next = txt.replace(re, (_, pre, pos) => `${pre}'${novo}'${pos}`);
+    if (next === txt) {
+      if (!re.test(txt)) console.warn(`Aviso: padrão não encontrado em ${arquivo}; troque a URL à mão.`);
+      return;
+    }
+    writeFileSync(arquivo, next);
+    console.log(`Atualizado: ${arquivo}`);
+  };
+  trocar(join(ROOT, 'frontend', 'src', 'config.js'),
+    /(VITE_PUBLIC_TEST_URL \|\| )'[^'\n]*'(;)/, url);
+  trocar(join(ROOT, 'scripts', 'stand.mjs'),
+    /(process\.env\.STAND_PUBLIC_URL \|\| )'[^'\n]*'(\))/, parsed.origin);
+  console.log('  Lembrete: rode `npm run build` para o QR da tela usar a URL nova.');
 }
 
 // ─── PDF do banner (opcional) ───────────────────────────────────────

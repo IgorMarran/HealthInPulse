@@ -339,10 +339,19 @@ function ProfileStep({ schema, profile, setProfile, persona, busy, error, onSubm
 }
 
 // ─── Resultado ───────────────────────────────────────────────
+// Texto calmo do alerta, por código. Nunca o rótulo clínico do backend
+// (ele é para a médica): ao visitante, orientação serena, em laranja.
+const REDFLAG_VISITOR_TEXT = {
+  NEOPLASIA: 'Perda de peso sem explicação junto com suor noturno intenso merece avaliação médica nas próximas semanas.',
+};
+const REDFLAG_VISITOR_FALLBACK = 'Uma das suas respostas merece avaliação médica nas próximas semanas.';
+
 function Result({ res, persona, onRestart }) {
   const onco = res.oncology ?? {};
-  const lv = oncoLevel(onco.level);
-  const summary = visitorSummary(onco.level, onco.conditions ?? []);
+  // Com alerta, a manchete acompanha o aviso (nunca "nada fora do esperado")
+  const level = res.redFlag ? 'INVESTIGAR' : onco.level;
+  const lv = oncoLevel(level);
+  const summary = visitorSummary(level, onco.conditions ?? []);
   const conditions = onco.conditions ?? [];
   const eligible = conditions.filter((c) => c.eligible);
   const ineligible = conditions.filter((c) => !c.eligible);
@@ -353,9 +362,9 @@ function Result({ res, persona, onRestart }) {
       {persona && <PersonaNote persona={persona} />}
 
       <section className={clsx('glass p-5 sm:p-7 border-l-4', {
-        'border-l-green-500':  onco.level === 'ROTINA',
-        'border-l-amber-500':  onco.level === 'ATENÇÃO',
-        'border-l-orange-500': onco.level === 'INVESTIGAR',
+        'border-l-green-500':  level === 'ROTINA',
+        'border-l-amber-500':  level === 'ATENÇÃO',
+        'border-l-orange-500': level === 'INVESTIGAR',
       })}>
         <span className={lv.badge}>{lv.label}</span>
         <h1 className="font-display text-2xl sm:text-3xl font-bold text-surface-900 mt-3 leading-tight">{summary.headline}</h1>
@@ -364,8 +373,9 @@ function Result({ res, persona, onRestart }) {
           <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex items-start gap-2.5">
             <AlertTriangle size={18} className="text-orange-600 shrink-0 mt-0.5" aria-hidden />
             <div className="text-sm">
-              <p className="font-semibold text-orange-900">{res.redFlag.label}</p>
-              <p className="text-orange-800 mt-0.5">{res.redFlag.action}</p>
+              <p className="text-orange-900">
+                {REDFLAG_VISITOR_TEXT[res.redFlag.code] ?? REDFLAG_VISITOR_FALLBACK}
+              </p>
             </div>
           </div>
         )}

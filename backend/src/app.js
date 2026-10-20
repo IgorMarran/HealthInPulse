@@ -57,13 +57,19 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ─── logging HTTP ────────────────────────────────────────────
-// Nunca o corpo. O teste público (/api/public) não entra no log: os
-// materiais da feira prometem que nada do visitante é gravado, nem IP.
+// Nunca o corpo. O teste público (/api/public e a página /teste) não entra
+// no log: os materiais da feira prometem que nada do visitante é gravado,
+// nem URL, nem IP.
+const isPublicTest = (req) => {
+  const url = (req.originalUrl || req.url || '').toLowerCase();
+  return url.startsWith('/api/public/')
+    || url === '/teste' || url.startsWith('/teste/') || url.startsWith('/teste?');
+};
 app.use(morgan(
   process.env.NODE_ENV === 'development' ? 'dev' : 'combined',
   {
     stream: { write: (msg) => logger.http(msg.trim()) },
-    skip:   (req) => (req.originalUrl || req.url).startsWith('/api/public/'),
+    skip:   isPublicTest,
   },
 ));
 
