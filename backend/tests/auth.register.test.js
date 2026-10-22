@@ -1,6 +1,7 @@
-// ─── Cadastro: só os campos do perfil ───────────────────────────────
-// O POST /auth/register espalhava o corpo inteiro no Patient/Doctor
-// (mass assignment): dava para se cadastrar com healthCoins: 999999.
+// ─── Cadastro: só usuário, nome e senha ──────────────────────────────
+// O POST /auth/register já espalhou o corpo inteiro no Patient/Doctor
+// (mass assignment): dava para se cadastrar com healthCoins: 999999. Hoje
+// o controller só repassa usuário, senha e nome.
 // O authService é trocado por um falso (require.cache) para ver o que o
 // controller manda gravar, sem banco.
 
@@ -27,34 +28,25 @@ const post = async (body) => {
   return calls[0];
 };
 
-test('paciente: grava só nome, CPF, nascimento, sexo e telefone', async () => {
+test('cadastro: manda só usuário, senha e nome; o resto do corpo é ignorado', async () => {
   const sent = await post({
-    email: 'a@b.dev', password: '12345678', role: 'PATIENT',
-    fullName: 'Ana', cpf: '111.222.333-44', dateOfBirth: '1990-01-02', gender: 'OTHER',
+    username: 'ana', password: '12345678', fullName: 'Ana',
+    role: 'DOCTOR', cpf: '111.222.333-44', email: 'a@b.dev',
     healthCoins: 999999, id: 'x', userId: 'y', crm: 'CRM-SP 1',
   });
-  assert.deepEqual(sent, {
-    email: 'a@b.dev', password: '12345678', role: 'PATIENT',
-    profileData: { fullName: 'Ana', cpf: '111.222.333-44', dateOfBirth: new Date('1990-01-02'), gender: 'OTHER' },
-  });
+  assert.deepEqual(sent, { username: 'ana', password: '12345678', fullName: 'Ana' });
 });
 
-test('data de nascimento do <input type="date"> vira Date; data inválida dá 422', async () => {
-  let error = null;
-  await register({ body: { email: 'd@b.dev', password: '12345678', role: 'PATIENT', fullName: 'D', dateOfBirth: 'ontem' } },
-    { status() { return this; }, json() { return this; } }, (err) => { error = err; });
-  assert.equal(error?.status, 422);
+test('cadastro: usuário vai em minúsculas e sem espaço nas pontas', async () => {
+  const sent = await post({ username: '  Roberto.P ', password: '12345678', fullName: ' Roberto ' });
+  assert.equal(sent.username, 'roberto.p');
+  assert.equal(sent.fullName, 'Roberto');
 });
 
-test('médico: grava só nome, CRM, especialidade e telefone (o cadastro de médico continua na demo)', async () => {
-  const sent = await post({
-    email: 'm@b.dev', password: '12345678', role: 'DOCTOR',
-    fullName: 'Dra. X', crm: 'CRM-SP 2', specialty: 'Clínica', bio: 'injetada', userId: 'y', cpf: '1',
-  });
-  assert.deepEqual(sent.profileData, { fullName: 'Dra. X', crm: 'CRM-SP 2', specialty: 'Clínica' });
-});
-
-test('valor que não é texto não passa (objeto no lugar do nome)', async () => {
-  const sent = await post({ email: 'c@b.dev', password: '12345678', role: 'PATIENT', fullName: 'C', phone: { set: '1' } });
-  assert.deepEqual(sent.profileData, { fullName: 'C' });
+test('login: procura o usuário em minúsculas', async () => {
+  const { login } = require('../src/controllers/authController');
+  const seen = [];
+  require.cache[servicePath].exports.login = async (args) => { seen.push(args); return { ok: true }; };
+  await login({ body: { username: 'MARINA ', password: 'x' } }, { json() { return this; } }, (err) => { throw err; });
+  assert.deepEqual(seen[0], { username: 'marina', password: 'x' });
 });

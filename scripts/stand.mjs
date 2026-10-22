@@ -34,8 +34,8 @@ const SKIP_BUILD = flag('--skip-build');
 const PORT = Number(option('--port') || process.env.STAND_PORT || (CHECK ? 3997 : 3000));
 const PUBLIC_URL = (process.env.STAND_PUBLIC_URL || 'https://healthinpulse.onrender.com').replace(/\/$/, '');
 
-const DOCTOR = { email: 'doctor@healthinpulse.dev',  password: 'Doctor@123' };
-const ROBERTO = { email: 'roberto@healthinpulse.dev', password: 'Roberto@123' };
+const DOCTOR = { username: 'ana',     password: 'Doctor@123' };
+const ROBERTO = { username: 'roberto', password: 'Roberto@123' };
 
 let server = null;     // processo do backend
 let stopping = false;
@@ -190,10 +190,12 @@ function printBanner() {
   }
   console.log(`  Online (Render)  ${c.bold(PUBLIC_URL)}  ${c.dim('(precisa de internet)')}`);
   console.log(`\n  ${c.bold('Logins da demo')}`);
-  console.log(`    Médica    ${DOCTOR.email}   ${DOCTOR.password}`);
-  console.log(`    Roberto   ${ROBERTO.email}   ${ROBERTO.password}`);
-  console.log(`    Marina    marina@healthinpulse.dev   Marina@123`);
-  console.log(`    João      joao@healthinpulse.dev   Joao@123`);
+  // Senhas só no slide 5 (logins da demo); aqui só os usuários
+  console.log(`    Médica    ${DOCTOR.username}`);
+  console.log(`    Roberto   ${ROBERTO.username}`);
+  console.log('    Marina    marina');
+  console.log('    João      joao');
+  console.log(c.dim('    senhas: slide 5 da apresentação'));
   console.log(`\n  Base da IA editável: ${c.green('sim')} · banco ${KEEP_DB ? 'mantido' : 'zerado e populado agora'}`);
   if (IS_WIN) {
     console.log(`\n  ${c.yellow('Firewall do Windows:')} se o celular não abrir o endereço da rede, na primeira vez`);

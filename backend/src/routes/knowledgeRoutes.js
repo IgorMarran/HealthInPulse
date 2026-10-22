@@ -30,7 +30,7 @@ const requireEditable = (_req, res, next) => {
 // Quem editou, para o histórico (nome da médica)
 const changedBy = async (req) => {
   try { return (await doctorService.getProfile(req.user.id)).fullName; }
-  catch { return req.user.email ?? req.user.id; }
+  catch { return req.user.username ?? req.user.id; }
 };
 
 // Motivo da edição (vai para KnowledgeVersion.note). Não se chama `note`

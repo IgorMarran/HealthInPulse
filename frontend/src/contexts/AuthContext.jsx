@@ -25,13 +25,30 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const login = useCallback(async (email, password) => {
-    const { data } = await authService.login({ email, password });
+  // Guarda os tokens e o usuário (login e cadastro devolvem o mesmo formato)
+  const startSession = useCallback((data) => {
     localStorage.setItem('accessToken',  data.accessToken);
     localStorage.setItem('refreshToken', data.refreshToken);
     setUser(data.user);
     return data.user;
   }, []);
+
+  const login = useCallback(async (username, password) => {
+    const { data } = await authService.login({ username, password });
+    return startSession(data);
+  }, [startSession]);
+
+  const register = useCallback(async (form) => {
+    const { data } = await authService.register(form);
+    return startSession(data);
+  }, [startSession]);
+
+  // Tutorial visto: grava no banco para não aparecer de novo em outro aparelho
+  const markTutorialSeen = useCallback(async () => {
+    if (!user || user.tutorialSeenAt) return;
+    setUser((u) => (u ? { ...u, tutorialSeenAt: new Date().toISOString() } : u));
+    try { await authService.tutorialSeen(); } catch (_) {}
+  }, [user]);
 
   const logout = useCallback(async () => {
     try { await authService.logout(); } catch (_) {}
@@ -52,11 +69,20 @@ export function AuthProvider({ children }) {
   const isDoctor  = user?.role === 'DOCTOR';
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refreshCoins, isPatient, isDoctor }}>
+    <AuthContext.Provider value={{
+      user, loading, login, register, logout, refreshCoins, markTutorialSeen, isPatient, isDoctor,
+    }}>
       {children}
     </AuthContext.Provider>
   );
 }
+
+// Para onde o usuário vai depois de entrar. Paciente que ainda não viu o
+// tutorial está no primeiro acesso: começa pela triagem.
+export const homeFor = (user) => {
+  if (user?.role === 'DOCTOR') return '/doctor';
+  return user?.tutorialSeenAt ? '/patient' : '/patient/triage';
+};
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);

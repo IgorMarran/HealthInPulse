@@ -29,6 +29,7 @@
 
 const prisma         = require('../config/database');
 const goalService    = require('./goalService');
+const patientView    = require('./patientView');
 const { getIO }      = require('../config/socket');
 const { stringifyJson, parseTriage, parseJson } = require('../utils/jsonField');
 
@@ -41,6 +42,7 @@ const kbRepository = require('./clinical/kb/kbRepository');
 const riskEngine     = require('./clinical/riskEngine');
 const questionRunner = require('./clinical/questionRunner');
 const labEvidence    = require('./clinical/labEvidence');
+const chronicScores  = require('./clinical/chronicScores');
 const { ageFromDob, mapGender, computeBmi, normalizeProfile } = require('./clinical/profile');
 
 // ─── Fase oncológica ───────────────────────────────────────────────
@@ -273,27 +275,21 @@ const advance = async (triage, state, patientId) => {
   return buildResponse(triage.id, state, {});
 };
 
-// Fase crônica: mesma conta da v7 (parada + IG ponderado)
+// Fase crônica: perguntas fixas dos escores validados (chronicScores),
+// na ordem: sinais de alarme, PHQ-2, STOP-Bang, FINDRISC e, se o PHQ-2
+// der ≥ 3, o resto do PHQ-9. Sem motor bayesiano (regra R1).
 const nextChronicQuestion = async (state) => {
-  const engine  = await getEngine();
-  const profile = state.profile;
-  const post    = engine.computePosterior(state.evidence, profile);
-  const stop    = engine.shouldStop(post, state.asked.length, {
-    maxQuestions: CHRONIC_MAX_QUESTIONS, minQuestions: 6, confidenceCutoff: 0.80,
-  });
-  if (stop.stop) return null;
-
-  const candidates = questions.candidatesFor(engine.kb, profile, CHRONIC_PANEL);
-  const next = engine.selectNextSymptom(candidates, state.evidence, profile, { targetThreshold: 0.5 });
-  if (!next) return null;
-  const ranking = engine.classifyRisk(post).ranking;
+  const { code, progress } = chronicScores.nextQuestion(state.rawAnswers, state.profile);
+  if (!code) return null;
+  const question = questions.getQuestionForSymptom(code);
+  if (!question) return null;
   return {
     phase:       CHRONIC_PANEL,
-    question:    next.question,
-    explanation: explainPick(next, ranking[0]),
+    question,
+    explanation: null,
     reason:      null,
-    leaderboard: ranking.slice(0, 3),
-    progress:    { asked: state.asked.length, max: CHRONIC_MAX_QUESTIONS },
+    leaderboard: [],
+    progress,
   };
 };
 
@@ -355,23 +351,11 @@ const assessOncology = async (patientId, state) => {
 
 // ─── Finalizadores ─────────────────────────────────────────────────
 const finalize = async (triage, state, patientId) => {
-  const engine  = await getEngine();
-  const post    = engine.computePosterior(state.evidence, state.profile);
-  const verdict = engine.classifyRisk(post);
-  const computedScales = scales.runAll({
-    answers:  state.rawAnswers,
-    profile:  state.profile,
-    wearable: state.wearable,
-  });
-
-  // Reforço por escalas validadas (Fase 4): a escala domina quando
-  // muito alta — ex.: PHQ-9 ≥ 20 → garante level CRITICAL.
-  let level = verdict.riskLevel;
-  let score = verdict.score;
-  if (computedScales.phq9.severity === 'SEVERE')          level = 'CRITICAL';
-  if (computedScales.stopBang.risk === 'HIGH'   && rank(level) < rank('HIGH'))     level = 'HIGH';
-  if (computedScales.findrisc.risk === 'VERY_HIGH' && rank(level) < rank('HIGH'))  level = 'HIGH';
-  if (computedScales.framingham.risk === 'HIGH'  && rank(level) < rank('HIGH'))    level = 'HIGH';
+  // Fase crônica: escores validados com os cortes oficiais (chronicScores)
+  const chronic = chronicScores.evaluate(state.rawAnswers, state.profile);
+  const computedScales = scales.runAll({ answers: state.rawAnswers, profile: normalizeProfile(state.profile) });
+  let level = chronic.riskLevel;
+  const score = null; // sem probabilidade: o nível vem das faixas dos escores
 
   // Fase 2: risco oncológico. ROTINA não sobe o nível; ATENÇÃO sobe até
   // MODERATE e INVESTIGAR até HIGH (o maior entre crônico e oncológico).
@@ -385,14 +369,13 @@ const finalize = async (triage, state, patientId) => {
   }
   const investigate = (oncology?.conditions ?? []).filter(c => c.level === riskEngine.LEVEL.INVESTIGAR);
 
-  const summary = buildSummary(state, verdict.ranking, computedScales, oncology);
-  const suggestions = buildSuggestions(level, verdict.ranking, computedScales, state.wearable, oncology);
+  const summary = buildSummary(state, chronic, oncology);
+  const suggestions = buildSuggestions(level, chronic, oncology);
 
   state.result = {
     riskLevel: level,
     score,
-    posterior: post,
-    ranking:   verdict.ranking,
+    chronic,
     scales:    computedScales,
     summary,
     suggestions,
@@ -417,17 +400,18 @@ const finalize = async (triage, state, patientId) => {
     },
   });
 
+  const nextStep = patientView.nextStepFor(state.result)?.code ?? null;
   try {
-    await goalService.generateGoalsFromTriage(
-      patientId,
-      { riskLevel: level, score, summary, suggestions },
-      triage.id,
-    );
+    await goalService.generateGoalsFromTriage(patientId, {
+      profile: normalizeProfile(state.profile), wearable: state.wearable ?? {}, nextStep,
+    }, triage.id);
   } catch (e) { console.error('Erro ao gerar metas:', e.message); }
 
   if (investigate.length) await notifyDoctors(patientId, triage.id, investigate);
-  await emitCompleted(patientId, triage.id, level, report.id, false,
-    investigate.length ? { oncology: investigate.map(c => c.code) } : {});
+  await emitCompleted(patientId, triage.id, level, report.id, false, {
+    nextStep,
+    ...(investigate.length ? { oncology: investigate.map(c => c.code) } : {}),
+  });
 };
 
 // Câncer em INVESTIGAR: avisa os médicos vinculados (notificação + socket)
@@ -497,9 +481,19 @@ const finalizeWithRedFlag = async (triage, state, patientId) => {
     },
   });
 
+  // Metas de hábito também valem no alarme (a de consulta não: o passo é
+  // procurar atendimento agora)
+  try {
+    await goalService.generateGoalsFromTriage(patientId, {
+      profile: normalizeProfile(state.profile), wearable: state.wearable ?? {}, nextStep: 'AGORA',
+    }, triage.id);
+  } catch (e) { console.error('Erro ao gerar metas:', e.message); }
+
   if (investigate.length) await notifyDoctors(patientId, triage.id, investigate);
-  await emitCompleted(patientId, triage.id, level, report.id, true,
-    investigate.length ? { oncology: investigate.map(c => c.code) } : {});
+  await emitCompleted(patientId, triage.id, level, report.id, true, {
+    nextStep: 'AGORA',
+    ...(investigate.length ? { oncology: investigate.map(c => c.code) } : {}),
+  });
 };
 
 // ─── Construção da resposta para o frontend ────────────────────────
@@ -518,7 +512,7 @@ const buildResponse = async (triageId, state, extra = {}) => {
       status:     state.status,
       profile:    state.profile,
       schema:     questions.demographicSchema(),
-      wearableSummary: wearable.summarizeForPatient(state.wearable),
+      wearableSummary: patientView.wearableLines(state.wearable),
       hasWearable: !!state.wearable?.hasData,
       progress: { asked: 0, max: CHRONIC_MAX_QUESTIONS },
     };
@@ -533,7 +527,8 @@ const buildResponse = async (triageId, state, extra = {}) => {
       profile: state.profile,
       result: state.result,
       redFlag: state.redFlag,
-      wearableSummary: wearable.summarizeForPatient(state.wearable),
+      view: patientView.triageResultView(state),
+      wearableSummary: patientView.wearableLines(state.wearable),
       progress: { asked: state.asked.length, max: CHRONIC_MAX_QUESTIONS },
     };
   }
@@ -556,29 +551,23 @@ const buildResponse = async (triageId, state, extra = {}) => {
     ...(next.targets ? { targets: next.targets } : {}),
     progress: next.progress,
     leaderboard: next.leaderboard,
-    wearableSummary: wearable.summarizeForPatient(state.wearable),
+    wearableSummary: patientView.wearableLines(state.wearable),
   };
 };
 
 // ─── Helpers de finalização ────────────────────────────────────────
 const rank = (level) => ({ INCONCLUSIVE: 0, LOW: 1, MODERATE: 2, HIGH: 3, CRITICAL: 4 }[level] ?? 0);
 
-const buildSummary = (state, ranking, computedScales, oncology = null) => {
-  const top = ranking[0];
-  const wearLine = (state.wearable?.hasData ? wearable.summarizeForPatient(state.wearable) : [])
-    .map(l => `- ${l}`).join('\n') || '- Sem dados recentes da pulseira';
+// Resumo da médica: escores com a faixa e a fonte, pulseira e câncer
+const buildSummary = (state, chronic, oncology = null) => {
+  const wearLine = patientView.wearableLines(state.wearable).map(l => `- ${l}`).join('\n')
+    || '- Sinais da pulseira na faixa normal (ou sem dados recentes)';
   return [
-    `Hipótese principal: **${top.label}** (probabilidade ${(top.posterior * 100).toFixed(0)}%).`,
-    `Top 3 hipóteses: ${ranking.slice(0, 3).map(h => `${h.label} (${Math.round(h.posterior * 100)}%)`).join(' · ')}.`,
+    '**Escores validados (fase crônica):**',
+    ...chronic.scores.map(s => `- ${s.label}: ${s.scale} ${s.score}/${s.max} (${s.category}; corte ${s.cutoff})`),
     '',
     '**Dados da pulseira Care Plus:**',
     wearLine,
-    '',
-    '**Escalas validadas:**',
-    `- STOP-BANG: ${computedScales.stopBang.score}/8 (${computedScales.stopBang.risk})`,
-    `- PHQ-9: ${computedScales.phq9.score}/27 (${computedScales.phq9.severity})`,
-    `- FINDRISC: ${computedScales.findrisc.score}/26 (${computedScales.findrisc.risk}) — ${(computedScales.findrisc.prob10y * 100).toFixed(0)}% em 10 anos`,
-    `- Framingham: ${(computedScales.framingham.prob10y * 100).toFixed(0)}% risco CV em 10 anos (${computedScales.framingham.risk})`,
     ...oncologySummaryLines(oncology),
   ].join('\n');
 };
@@ -602,31 +591,23 @@ const oncologySummaryLines = (oncology) => {
   return lines;
 };
 
-const buildSuggestions = (level, ranking, computedScales, _wearableSnap, oncology = null) => {
+// Sugestões da médica (o paciente vê só o próximo passo, patientView)
+const buildSuggestions = (level, chronic, oncology = null) => {
   const out = [];
-  const top = ranking[0];
-
-  if (level === 'CRITICAL' || level === 'HIGH') {
-    out.push({ type: 'action',  text: `Procurar avaliação médica nas próximas 24h focando em ${top.label}` });
-    out.push({ type: 'warning', text: 'Se sintomas se intensificarem, ir ao pronto-socorro' });
+  if (level === 'HIGH' || level === 'CRITICAL') {
+    out.push({ type: 'action', text: 'Avaliação médica: escore em faixa alta' });
   } else if (level === 'MODERATE') {
-    out.push({ type: 'action',  text: `Agendar consulta de acompanhamento em até 7 dias (${top.label})` });
+    out.push({ type: 'action', text: 'Avaliação médica: escore acima do corte de rastreio' });
   } else {
-    out.push({ type: 'info',    text: 'Sinais clínicos estáveis — manter rotina de monitoramento' });
+    out.push({ type: 'info', text: 'Escores abaixo dos cortes de rastreio: manter rotina' });
   }
-
-  if (computedScales.phq9.suicidalIdeation) {
-    out.unshift({ type: 'warning', text: 'Procurar suporte de saúde mental imediato — CVV 188' });
+  if (chronic.suicidalIdeation) {
+    out.unshift({ type: 'warning', text: 'Item 9 do PHQ-9 positivo: suporte de saúde mental imediato (CVV 188)' });
   }
-  if (computedScales.stopBang.risk === 'HIGH') {
-    out.push({ type: 'exam', text: 'Solicitar polissonografia (STOP-BANG ≥ 3)' });
-  }
-  if (computedScales.findrisc.risk === 'HIGH' || computedScales.findrisc.risk === 'VERY_HIGH') {
-    out.push({ type: 'exam', text: 'Solicitar glicemia em jejum + HbA1c (FINDRISC elevado)' });
-  }
-  if (computedScales.framingham.risk === 'HIGH') {
-    out.push({ type: 'exam', text: 'Solicitar perfil lipídico + ECG (Framingham > 20% em 10 anos)' });
-  }
+  const byCode = Object.fromEntries(chronic.scores.map(s => [s.code, s]));
+  if (byCode.AOS?.positive) out.push({ type: 'exam', text: `Considerar polissonografia (STOP-Bang ${byCode.AOS.score}, corte ≥ 3)` });
+  if (byCode.DM2?.positive) out.push({ type: 'exam', text: `Glicemia de jejum e HbA1c (FINDRISC ${byCode.DM2.score}, corte ≥ 15; SBD 2025)` });
+  if (byCode.DEPRESSAO?.positive) out.push({ type: 'action', text: `Avaliação de saúde mental (PHQ-9 ${byCode.DEPRESSAO.score}, corte ≥ 10)` });
   for (const c of oncology?.conditions ?? []) {
     if (c.level === 'INVESTIGAR') {
       out.push({ type: 'action', text: `Procurar avaliação médica sobre ${c.label.toLowerCase()}: os sinais pedem exames (não é diagnóstico)` });
@@ -638,16 +619,6 @@ const buildSuggestions = (level, ranking, computedScales, _wearableSnap, oncolog
     if (s.status === 'DECISAO_COMPARTILHADA') out.push({ type: 'info', text: `Conversar com o médico sobre ${s.exam} (${s.conditionLabel.toLowerCase()})` });
   }
   return out;
-};
-
-const explainPick = (next, leader) => {
-  if (!leader) return null;
-  return {
-    ig: Number(next.ig.toFixed(3)),
-    targetHypothesis: leader.label,
-    targetProb: Number((leader.posterior * 100).toFixed(0)),
-    cost: next.cost,
-  };
 };
 
 const followUpDef = (id) => {
@@ -688,13 +659,15 @@ const emitCompleted = async (patientId, triageId, riskLevel, reportId, isRedFlag
       where: { id: patientId }, select: { userId: true },
     });
     if (patient) {
+      // Paciente: só o próximo passo (regra R2: nada de nível de risco)
       io.to(`user:${patient.userId}`).emit('triage:completed', {
-        triageId, riskLevel, reportId, isRedFlag,
+        triageId, reportId, isRedFlag, nextStep: extra.nextStep ?? null,
       });
     }
     if (['HIGH', 'CRITICAL'].includes(riskLevel)) {
       for (const userId of await linkedDoctorUserIds(patientId, db)) {
-        io.to(`user:${userId}`).emit('triage:alert', { patientId, riskLevel, triageId, isRedFlag, ...extra });
+        const { nextStep: _patientOnly, ...doctorExtra } = extra;
+        io.to(`user:${userId}`).emit('triage:alert', { patientId, riskLevel, triageId, isRedFlag, ...doctorExtra });
       }
     }
   } catch (_) {}

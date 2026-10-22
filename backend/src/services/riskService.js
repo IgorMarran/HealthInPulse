@@ -20,6 +20,7 @@ const labEvidence  = require('./clinical/labEvidence');
 const wearable     = require('./clinical/wearableEvidence');
 const { ageFromDob, mapGender, computeBmi, normalizeProfile } = require('./clinical/profile');
 const { parseJson } = require('../utils/jsonField');
+const chronicScores = require('./clinical/chronicScores');
 
 const DISCLAIMER = 'Triagem de risco com estimativas didáticas, não diagnóstico. '
   + 'Os percentuais são a chance estimada de diagnóstico em 2 anos; o limiar para investigar é 3% (NICE NG12).';
@@ -96,10 +97,11 @@ const assessPatient = async (patientId, { now = new Date() } = {}) => {
       riskLevel:  a.oncologyRiskLevel, // LOW / MODERATE / HIGH
       conditions: a.oncology,
     },
-    chronic: {
-      riskLevel:  a.chronicRiskLevel,
-      conditions: a.chronic,
-    },
+    // Crônicas: escores validados da última triagem (regra R1; o motor
+    // bayesiano crônico saiu por falta de fonte)
+    chronic: triage && state.rawAnswers
+      ? chronicScores.evaluate(state.rawAnswers, state.profile ?? {})
+      : null,
     screening:       a.screening.filter(s => s.status !== 'FUTURO'),
     futureScreening: a.screening.filter(s => s.status === 'FUTURO'),
     modifiable:      a.modifiable,

@@ -125,3 +125,43 @@ test('seed: metas e saldo curados de João e Marina não ganham duplicatas da tr
     assert.equal(new Set(titles).size, titles.length, `${email}: metas repetidas ${titles}`);
   }
 });
+
+// ─── Metas com fonte (Parte 5) e cadastro novo (Parte 1) ────────────
+test('Roberto: metas da triagem vêm de modelo com fonte e não duplicam ao repetir', async () => {
+  const goalService = require('../src/services/goalService');
+  const user = await prisma.user.findUnique({ where: { username: 'roberto' }, include: { patient: true } });
+  const pid = user.patient.id;
+  const goals = await prisma.healthGoal.findMany({ where: { patientId: pid, source: 'triage' } });
+  assert.ok(goals.length > 0, 'a triagem do seed não gerou metas');
+  const sources = new Set((await prisma.clinicalSource.findMany({ select: { code: true } })).map(s => s.code));
+  for (const g of goals) {
+    assert.ok(g.templateCode, `meta sem modelo: ${g.title}`);
+    if (g.templateCode !== 'CONSULTA') assert.ok(sources.has(g.sourceCode), `${g.title}: fonte ${g.sourceCode} fora do banco`);
+    assert.ok(!/c[âa]ncer|intestino|colorretal/i.test(`${g.title} ${g.description}`), g.title);
+  }
+
+  const before = await prisma.healthGoal.count({ where: { patientId: pid, status: 'ACTIVE' } });
+  await goalService.generateGoalsFromTriage(pid, {
+    profile: { age: 63, sex: 'male', smoker: true, bmi: 27, height: 172, weight: 80 },
+    wearable: {}, nextStep: 'CONSULTA',
+  }, null);
+  const active = await prisma.healthGoal.findMany({ where: { patientId: pid, status: 'ACTIVE' } });
+  const codes = active.map(g => g.templateCode).filter(Boolean);
+  assert.equal(new Set(codes).size, codes.length, `metas repetidas: ${codes}`);
+  assert.ok(active.length >= before);
+});
+
+test('cadastro: paciente novo entra só com usuário, nome e senha e fica ligado à médica', async () => {
+  const authService = require('../src/services/authService');
+  const out = await authService.register({ username: 'visitante.novo', password: '12345678', fullName: 'Visitante' });
+  assert.equal(out.user.username, 'visitante.novo');
+  assert.equal(out.user.tutorialSeenAt, null);
+  const patient = await prisma.patient.findFirst({ where: { userId: out.user.id }, include: { doctorLinks: true } });
+  assert.equal(patient.cpf, null);
+  assert.ok(patient.doctorLinks.length >= 1, 'paciente novo sem médica');
+  await assert.rejects(
+    authService.register({ username: 'visitante.novo', password: '12345678', fullName: 'Outro' }),
+    (e) => e.status === 409,
+  );
+  await assert.rejects(authService.login({ username: 'visitante.novo', password: 'errada' }), (e) => e.status === 401);
+});

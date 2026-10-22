@@ -3,6 +3,7 @@ const path    = require('path');
 const prisma  = require('../config/database');
 const { getIO } = require('../config/socket');
 const openaiService = require('./openaiService');
+const patientView   = require('./patientView');
 const { parseExam, stringifyJson } = require('../utils/jsonField');
 
 // ─── Upload ──────────────────────────────────────────────────
@@ -62,9 +63,11 @@ const processExam = async (examId, filePath, fileType, patientId) => {
         where: { id: patientId }, select: { userId: true },
       });
       if (patient) {
+        // Paciente: só quantos achados ficaram fora da faixa (regra R2)
+        const findings = Array.isArray(analysis.findings) ? analysis.findings : [];
         getIO().to(`user:${patient.userId}`).emit('exam:processed', {
           examId,
-          riskLevel: analysis.riskLevel,
+          outOfRange: findings.filter((f) => f.status && String(f.status).toLowerCase() !== 'normal').length,
         });
       }
     } catch (_) {}
@@ -96,6 +99,14 @@ const getExams = async (patientId, { page = 1, limit = 20, status } = {}) => {
 
   return { total, page, limit, items: items.map(parseExam) };
 };
+
+// Versões do paciente (regra R2): o médico usa getExamForDoctor
+const getExamsForPatient = async (patientId, query) => {
+  const page = await getExams(patientId, query);
+  return { ...page, items: page.items.map(patientView.examForPatient) };
+};
+const getExamByIdForPatient = async (examId, patientId) =>
+  patientView.examForPatient(await getExamById(examId, patientId));
 
 const getExamById = async (examId, patientId) => {
   const exam = await prisma.exam.findFirst({
@@ -131,4 +142,7 @@ const getExamForDoctor = async (examId, doctorId) => {
   return parseExam(exam);
 };
 
-module.exports = { uploadExam, getExams, getExamById, deleteExam, getExamForDoctor };
+module.exports = {
+  uploadExam, getExams, getExamById, deleteExam, getExamForDoctor,
+  getExamsForPatient, getExamByIdForPatient,
+};

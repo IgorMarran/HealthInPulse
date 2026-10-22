@@ -11,8 +11,8 @@ import { Info } from 'lucide-react';
 import clsx from 'clsx';
 
 export const VISITOR_DISCLAIMER =
-  'Triagem educativa de risco. Não é diagnóstico e não substitui uma consulta: '
-  + 'os números são estimativas a partir de estudos publicados.';
+  'Orientação de prevenção. Não é diagnóstico e não substitui uma consulta: '
+  + 'as faixas e recomendações vêm de livro de referência e diretrizes oficiais.';
 export const DOCTOR_DISCLAIMER =
   'Triagem de risco com estimativas didáticas, não diagnóstico. Os percentuais são a chance '
   + 'estimada de diagnóstico em 2 anos; o limiar para investigar é 3% (NICE NG12).';

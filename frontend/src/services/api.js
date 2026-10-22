@@ -13,6 +13,7 @@ api.interceptors.request.use((config) => {
 });
 
 // Trata expiração do access token com refresh automático
+const AUTH_FORM_URLS = ['/auth/login', '/auth/register'];
 let refreshing = false;
 let queue      = [];
 
@@ -31,6 +32,10 @@ api.interceptors.response.use(
   async (err) => {
     const original = err.config;
     if (err.response?.status !== 401 || original._retry) return Promise.reject(err);
+    // 401 do login/cadastro é senha errada, não sessão expirada: sem isso o
+    // refresh falhava e o redirecionamento recarregava a página, apagando o
+    // que a pessoa tinha digitado
+    if (AUTH_FORM_URLS.includes(original.url)) return Promise.reject(err);
 
     if (refreshing) {
       return new Promise((resolve, reject) => queue.push({ resolve, reject, config: original }));
@@ -65,5 +70,9 @@ api.interceptors.response.use(
     }
   },
 );
+
+// Mensagem do backend: erro de validação vem em `fields`, o resto em `error`
+export const apiError = (err, fallback) =>
+  err.response?.data?.fields?.[0]?.message || err.response?.data?.error || fallback;
 
 export default api;

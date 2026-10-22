@@ -173,8 +173,12 @@ test('likelihoods: 0 < pSx, pNoSx < 1, pSx > pNoSx e lrPos = pSx/pNoSx', () => {
     assert.ok(Math.abs(r.lrPos - r.pSx / r.pNoSx) < 0.01, `${where}: lrPos ${r.lrPos}`);
     assert.ok(r.note, `${where}: sem nota de derivação`);
   }
-  // Todo sintoma oncológico é usado por pelo menos uma condição
-  const used = new Set(onco.conditionSymptoms.map(r => r.symptomCode));
+  // Todo sintoma oncológico é usado por pelo menos uma condição (likelihood
+  // ou regra direta de diretriz, sem número)
+  const used = new Set([
+    ...onco.conditionSymptoms.map(r => r.symptomCode),
+    ...onco.directRules.map(r => r.symptomCode),
+  ]);
   for (const s of onco.symptoms) assert.ok(used.has(s.code), `${s.code}: sem likelihood`);
 });
 

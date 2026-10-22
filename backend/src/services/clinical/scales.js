@@ -1,24 +1,26 @@
 // ─── Escalas clínicas validadas ─────────────────────────────────────
-// Calculadas em paralelo ao motor bayesiano e servem como âncora de
-// calibração (Fase 4 do documento de triagem).
+// Desde a auditoria de 22/10/2026 (regra R1) são ELAS que decidem a fase
+// crônica da triagem (clinical/chronicScores.js): os LRs por sintoma da
+// matriz v7 não tinham fonte. Pontos e cortes com fonte:
 //
-//  - STOP-BANG   — risco de AOS (Chung 2008/2016)
-//  - PHQ-9       — depressão (Kroenke 2001)
-//  - FINDRISC    — risco de DM2 em 10 anos (Lindström 2003)
-//  - Framingham  — risco cardiovascular (Wilson 1998, versão simplificada)
+//  - STOP-BANG   — AOS: 0–2 baixo, 3–4 intermediário, 5–8 alto (Chung 2016)
+//  - PHQ-9       — depressão: 5/10/15/20 (Kroenke 2001); ≥ 10 (Levis 2019)
+//  - FINDRISC    — DM2 em 10 anos: pontos e faixas da SBD 2025 (Tabela 2)
+//  - Framingham  — risco cardiovascular (Wilson 1998, versão simplificada):
+//                  só informativo para a médica; não decide nada
 
 const { S } = require('./matrix');
 
 // ─── STOP-BANG ─────────────────────────────────────────────────────
-// 8 itens, 1 ponto cada. ≥3: alto risco para AOS moderada-grave.
-const stopBang = ({ answers, profile, wearable }) => {
+// 8 itens, 1 ponto cada: 0–2 baixo, 3–4 intermediário, 5–8 alto risco
+// (Chung F, Abdullah HR, Liao P. Chest 2016;149(3):631-8). Só respostas da
+// pessoa: IAH e PA da pulseira não são itens do STOP-Bang.
+const stopBang = ({ answers, profile }) => {
   const items = {
     Snoring:    yes(answers, S.RONCO_ALTO),
     Tired:      yes(answers, S.FADIGA_DIURNA),
-    Observed:   yes(answers, S.APNEIA_OBSERVADA) ||
-                (wearable?.ahi != null && wearable.ahi >= 5),
-    Pressure:   yes(answers, S.HAS_CONHECIDA) ||
-                (wearable?.systolicAvg != null && wearable.systolicAvg >= 140),
+    Observed:   yes(answers, S.APNEIA_OBSERVADA),
+    Pressure:   yes(answers, S.HAS_CONHECIDA),
     Bmi:        profile?.bmi != null && profile.bmi > 35,
     Age:        profile?.age != null && profile.age > 50,
     Neck:       yes(answers, S.PESCOCO_LARGO),
@@ -38,9 +40,9 @@ const stopBang = ({ answers, profile, wearable }) => {
     risk,
     items,
     interpretation: risk === 'HIGH'
-      ? 'Alto risco para AOS moderada-grave (sensibilidade 93% para AHI > 15)'
+      ? 'Alto risco para AOS (≥ 5: sensibilidade 60%, especificidade 72% para IAH ≥ 15; Nagappa 2015)'
       : risk === 'INTERMEDIATE'
-        ? 'Risco intermediário para AOS — investigar com polissonografia'
+        ? 'Risco intermediário para AOS (≥ 3; Chung 2016): considerar polissonografia'
         : 'Baixo risco para AOS',
   };
 };
@@ -76,25 +78,27 @@ const phq9 = ({ answers }) => {
     severity,
     items:   present,
     suicidalIdeation: (present[S.PHQ9_IDEACAO] ?? 0) > 0,
+    // Faixas de Kroenke 2001; sem probabilidade (não existe na fonte)
     interpretation: ({
-      SEVERE:           'Depressão grave (~95% probabilidade) — psiquiatria urgente',
-      MODERATELY_SEVERE:'Depressão moderadamente grave (~75%) — tratamento ativo',
-      MODERATE:         'Depressão moderada (~45%) — avaliação clínica recomendada',
-      MILD:             'Depressão leve (~18%) — monitoramento + suporte',
-      MINIMAL:          'Sem sintomas depressivos relevantes',
+      SEVERE:           'Sintomas depressivos graves (≥ 20; Kroenke 2001)',
+      MODERATELY_SEVERE:'Sintomas moderadamente graves (15–19; Kroenke 2001)',
+      MODERATE:         'Sintomas moderados (10–14). Corte ≥ 10: sensibilidade 88%, especificidade 85% (Levis 2019)',
+      MILD:             'Sintomas leves (5–9; Kroenke 2001)',
+      MINIMAL:          'Sem sintomas depressivos relevantes (< 5)',
     })[severity],
   };
 };
 
 // ─── FINDRISC ──────────────────────────────────────────────────────
-// Risco de DM2 em 10 anos. Escore 0–26.
+// Risco de DM2 em 10 anos. Escore 0–26. Pontos e faixas da Diretriz da SBD
+// (Rodacki M et al. Diabetol Metab Syndr 2025;17:78, Tabela 2).
 const findrisc = ({ answers, profile }) => {
   let score = 0;
 
-  // Idade
+  // Idade: 45–54 → 2; 55–64 → 3; acima de 64 → 4
   if (profile?.age != null) {
-    if (profile.age >= 64) score += 4;
-    else if (profile.age >= 54) score += 3;
+    if (profile.age > 64) score += 4;
+    else if (profile.age >= 55) score += 3;
     else if (profile.age >= 45) score += 2;
   }
   // IMC
@@ -102,8 +106,9 @@ const findrisc = ({ answers, profile }) => {
     if (profile.bmi > 30) score += 3;
     else if (profile.bmi >= 25) score += 1;
   }
-  // Cintura
-  if (yes(answers, S.CINTURA_AUMENTADA)) score += profile?.sex === 'male' ? 4 : 3;
+  // Cintura acima de 94 cm (homem) ou 80 cm (mulher): 3 pontos para os dois
+  // (o 4 exige a segunda faixa, > 102 / > 88 cm, que o app não pergunta)
+  if (yes(answers, S.CINTURA_AUMENTADA)) score += 3;
   // Sedentarismo
   if (yes(answers, S.SEDENTARISMO)) score += 2;
   // Frutas/vegetais
@@ -112,11 +117,14 @@ const findrisc = ({ answers, profile }) => {
   if (yes(answers, S.USO_ANTI_HAS)) score += 2;
   // Glicemia alterada
   if (yes(answers, S.GLICEMIA_ALTERADA)) score += 5;
-  // História familiar
-  if (yes(answers, S.HIST_FAM_DM)) score += 5;
+  // História familiar de 1º grau (pai, mãe, irmãos ou filhos): 5 pontos.
+  // Vem da pergunta ou do formulário do perfil (familyHistoryDm).
+  if (yes(answers, S.HIST_FAM_DM) || profile?.familyHistoryDm === true) score += 5;
 
+  // Faixas: < 7 baixo, 7–11 levemente elevado, 12–14 moderado, 15–20 alto,
+  // > 20 muito alto
   let risk, prob10y;
-  if (score >= 20)      { risk = 'VERY_HIGH'; prob10y = 0.50; }
+  if (score > 20)       { risk = 'VERY_HIGH'; prob10y = 0.50; }
   else if (score >= 15) { risk = 'HIGH';      prob10y = 0.33; }
   else if (score >= 12) { risk = 'MODERATE';  prob10y = 0.17; }
   else if (score >= 7)  { risk = 'SLIGHTLY_ELEVATED'; prob10y = 0.04; }

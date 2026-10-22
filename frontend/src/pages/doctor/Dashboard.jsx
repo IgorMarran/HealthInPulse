@@ -95,7 +95,7 @@ export default function DoctorDashboard() {
         <div>
           <p className="text-xs uppercase tracking-widest text-surface-400 font-medium">Visão geral</p>
           <h1 className="font-display text-2xl md:text-3xl font-bold mt-1">
-            Olá, <span className="text-brand-700">{user?.fullName || `Dr(a). ${user?.email?.split('@')[0] || ''}`}</span>
+            Olá, <span className="text-brand-700">{user?.fullName || `Dr(a). ${user?.username || ''}`}</span>
           </h1>
           <p className="text-sm text-surface-500 mt-1">
             {data?.totalPatients ?? 0} pacientes ativos · {format(new Date(), "EEEE, dd 'de' MMMM", { locale: ptBR })}

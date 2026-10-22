@@ -251,7 +251,7 @@ async function main() {
 
   console.log(`\n${c.green(c.bold('Pronto!'))} Agora rode:\n`);
   console.log(`    ${c.bold('npm run dev')}\n`);
-  console.log('e abra http://localhost:5173 (na tela de login, clique num card "Demo").\n');
+  console.log('e abra http://localhost:5173 (entre com usuário e senha: ana / Doctor@123, roberto / Roberto@123).\n');
 }
 
 // Também é importado pelo scripts/stand.mjs (reaproveita run, cores e o .env):

@@ -12,9 +12,9 @@ const SALT_ROUNDS = 12;
 // ─── helpers ────────────────────────────────────────────────
 
 const buildTokenPayload = (user) => ({
-  id:    user.id,
-  email: user.email,
-  role:  user.role,
+  id:       user.id,
+  username: user.username,
+  role:     user.role,
 });
 
 const issueTokenPair = async (user) => {
@@ -35,27 +35,30 @@ const issueTokenPair = async (user) => {
 };
 
 // ─── register ───────────────────────────────────────────────
+// Só paciente se cadastra (a médica já tem login pronto). O paciente novo
+// fica vinculado a toda médica cadastrada: sem vínculo, o alerta da triagem
+// dele não chegaria a ninguém.
 
-const register = async ({ email, password, role, profileData }) => {
-  const exists = await prisma.user.findUnique({ where: { email } });
-  if (exists) throw Object.assign(new Error('E-mail já cadastrado'), { status: 409 });
+const register = async ({ username, password, fullName }) => {
+  const exists = await prisma.user.findUnique({ where: { username } });
+  if (exists) throw Object.assign(new Error('Esse usuário já existe, escolha outro'), { status: 409 });
 
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+  const doctors      = await prisma.doctor.findMany({ select: { id: true } });
 
   const user = await prisma.user.create({
     data: {
-      email,
+      username,
       passwordHash,
-      role,
-      // Cria o perfil vinculado em uma única transação
-      ...(role === 'PATIENT' && {
-        patient: { create: profileData },
-      }),
-      ...(role === 'DOCTOR' && {
-        doctor: { create: profileData },
-      }),
+      role: 'PATIENT',
+      patient: {
+        create: {
+          fullName,
+          doctorLinks: { create: doctors.map((d) => ({ doctorId: d.id })) },
+        },
+      },
     },
-    include: { patient: true, doctor: true },
+    include: { patient: true },
   });
 
   const tokens = await issueTokenPair(user);
@@ -64,20 +67,20 @@ const register = async ({ email, password, role, profileData }) => {
 
 // ─── login ──────────────────────────────────────────────────
 
-const login = async ({ email, password }) => {
+const login = async ({ username, password }) => {
   const user = await prisma.user.findUnique({
-    where: { email },
+    where: { username },
     include: {
       patient: { select: { fullName: true, healthCoins: true } },
       doctor:  { select: { fullName: true } },
     },
   });
   if (!user || !user.isActive)
-    throw Object.assign(new Error('Credenciais inválidas'), { status: 401 });
+    throw Object.assign(new Error('Usuário ou senha inválidos'), { status: 401 });
 
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid)
-    throw Object.assign(new Error('Credenciais inválidas'), { status: 401 });
+    throw Object.assign(new Error('Usuário ou senha inválidos'), { status: 401 });
 
   // Log de auditoria
   await prisma.auditLog.create({
@@ -136,6 +139,11 @@ const changePassword = async (userId, { currentPassword, newPassword }) => {
   await prisma.refreshToken.deleteMany({ where: { userId } });
 };
 
+// ─── tutorial ───────────────────────────────────────────────
+
+const markTutorialSeen = (userId) =>
+  prisma.user.update({ where: { id: userId }, data: { tutorialSeenAt: new Date() } });
+
 // ─── sanitize ───────────────────────────────────────────────
 
 const sanitize = (user) => {
@@ -147,4 +155,4 @@ const sanitize = (user) => {
   };
 };
 
-module.exports = { register, login, refresh, logout, changePassword };
+module.exports = { register, login, refresh, logout, changePassword, markTutorialSeen };

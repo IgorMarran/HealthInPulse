@@ -48,7 +48,7 @@ export default function DoctorProfile() {
         </div>
         <div>
           <p className="font-medium text-surface-800">{form.fullName}</p>
-          <p className="text-xs text-surface-500">{user?.email}</p>
+          <p className="text-xs text-surface-500">@{user?.username}</p>
           {data?.crm && <p className="text-xs text-brand-600/70 mt-0.5">{data.crm}</p>}
         </div>
       </div>

@@ -62,7 +62,7 @@ export default function PatientDetail() {
         <div className="flex-1">
           <h1 className="font-display text-xl font-bold">{data.fullName}</h1>
           <p className="text-surface-500 text-sm">
-            {calcAge(data.dateOfBirth)} anos · {data.bloodType || 'Tipo sang. não informado'}
+            {data.dateOfBirth ? `${calcAge(data.dateOfBirth)} anos · ` : ''}{data.bloodType || 'Tipo sang. não informado'}
           </p>
         </div>
         <Link to="/doctor/reports" className="btn-primary">

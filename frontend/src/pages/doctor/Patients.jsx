@@ -36,7 +36,7 @@ export default function DoctorPatients() {
         <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-surface-400" />
         <input
           className="input pl-9"
-          placeholder="Buscar por nome ou CPF…"
+          placeholder="Buscar por nome ou usuário…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

@@ -11,23 +11,21 @@
 // ?kiosk=1 → volta sozinho à capa depois de 120 s sem toque.
 // Personas (personas.js) preenchem tudo para a equipe demonstrar rápido.
 //
-// O visitante vê categoria, risco relativo e frequência natural; nunca o
-// % (isso é da tela da médica).
+// Regra R2: o visitante nunca ouve doença. A API já devolve a visão de
+// prevenção (patientView.quickTestForVisitor): próximo passo, exames
+// preventivos da idade e do sexo e hábitos com fonte. O risco por doença
+// é só da tela da médica.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  ShieldCheck, Info, Smartphone, RotateCcw, ChevronRight, Users, AlertTriangle, ArrowLeft,
+  ShieldCheck, Info, Smartphone, RotateCcw, ChevronRight, Users, ArrowLeft, BookOpen,
 } from 'lucide-react';
-import clsx from 'clsx';
 import { publicApi } from '@/services/publicApi';
 import { PUBLIC_TEST_URL, KIOSK_IDLE_MS } from '@/config';
 import { isFieldVisible, visibleProfile } from '@/lib/conditions';
-import { oncoLevel, formatFactor, visitorSummary } from '@/lib/risk';
 import ProfileField from '@/components/triage/ProfileField';
 import QuestionCard from '@/components/triage/QuestionCard';
-import ConditionRiskCard from '@/components/risk/ConditionRiskCard';
-import ScreeningList from '@/components/risk/ScreeningList';
-import FrequencyDots from '@/components/risk/FrequencyDots';
+import { NextStepCard, ExamList, HabitList } from '@/components/prevention/PreventionView';
 import Disclaimer from '@/components/common/Disclaimer';
 import QrCode from '@/components/common/QrCode';
 import { PERSONAS } from './personas';
@@ -37,9 +35,8 @@ const HALF_WIDTH = ['age', 'height', 'weight', 'packYears'];
 
 const CALL_TIMEOUT_MS = 20 * 1000;
 
-// Aviso do visitante (o da API fala de "porcentagens", que ele não vê)
-const QUICKTEST_DISCLAIMER = 'Teste educativo feito para a feira. Não é diagnóstico e não substitui '
-  + 'uma consulta: os números são estimativas a partir de estudos publicados. Nada do que você respondeu foi gravado.';
+const QUICKTEST_DISCLAIMER = 'Teste educativo de prevenção, feito para a feira. Não é diagnóstico e não substitui '
+  + 'uma consulta: as recomendações vêm de livro de referência e diretrizes oficiais. Nada do que você respondeu foi gravado.';
 
 export default function QuickTest() {
   const [params] = useSearchParams();
@@ -197,7 +194,6 @@ export default function QuickTest() {
             <QuestionCard
               question={res.question}
               progress={res.progress}
-              reason={res.reason}
               busy={busy}
               onAnswer={answer}
               onBack={back}
@@ -225,7 +221,7 @@ export default function QuickTest() {
 
       <footer className="border-t border-surface-200 bg-white">
         <div className="max-w-5xl mx-auto px-4 py-3">
-          <Disclaimer variant="inline" audience="visitor" text="Teste educativo feito para a feira. Não é diagnóstico e não substitui uma consulta. Nada do que você responde é gravado." />
+          <Disclaimer variant="inline" audience="visitor" text="Teste educativo de prevenção, feito para a feira. Não é diagnóstico e não substitui uma consulta. Nada do que você responde é gravado." />
         </div>
       </footer>
     </div>
@@ -239,11 +235,11 @@ function Cover({ onStart, onPersona, busy, error, kiosk }) {
       <div className="grid gap-8 md:grid-cols-[1.1fr_0.9fr] md:items-center">
         <div className="space-y-6">
           <h1 className="font-display text-3xl sm:text-5xl font-bold leading-[1.1] tracking-tight text-brand-900">
-            Seu risco de câncer, explicado em 2 minutos.
+            Cuide da sua saúde antes que algo aconteça.
           </h1>
           <p className="text-surface-600 text-base sm:text-lg leading-relaxed max-w-prose">
-            Responda até 8 perguntas. Para cada tipo de câncer, você vê como se compara com pessoas da sua idade
-            e sexo, o porquê de cada resultado e quais exames de rastreamento valem para você.
+            Responda até 8 perguntas em 2 minutos. Você sai sabendo o próximo passo, quais exames preventivos
+            valem para a sua idade e quais hábitos fazem diferença.
           </p>
           <ul className="grid gap-2 text-sm text-surface-700 sm:grid-cols-2">
             <li className="flex items-center gap-2"><ShieldCheck size={16} className="text-green-600" aria-hidden /> Nada é gravado, sem login</li>
@@ -258,13 +254,13 @@ function Cover({ onStart, onPersona, busy, error, kiosk }) {
           </div>
         </div>
 
-        {/* A ideia do resultado: frequência natural em pontos */}
-        <figure className="glass p-5 sm:p-6">
-          <FrequencyDots frequency="~3 em 1.000" level="ATENÇÃO" className="w-full" />
-          <figcaption className="text-sm text-surface-600 mt-4 leading-relaxed">
-            <strong className="font-display text-lg text-surface-900 block">~3 em 1.000</strong>
-            É assim que mostramos o risco: entre 1.000 pessoas com respostas como as suas, quantas
-            recebem esse diagnóstico em 2 anos.
+        {/* De onde vêm as recomendações */}
+        <figure className="glass p-5 sm:p-6 space-y-3">
+          <BookOpen size={28} className="text-brand-700" aria-hidden />
+          <figcaption className="text-sm text-surface-600 leading-relaxed">
+            <strong className="font-display text-lg text-surface-900 block">Com base em quem entende</strong>
+            As faixas normais e as recomendações vêm do Guyton & Hall, o livro de referência da fisiologia
+            médica, e de diretrizes oficiais (Ministério da Saúde, INCA, OMS).
           </figcaption>
         </figure>
       </div>
@@ -339,83 +335,16 @@ function ProfileStep({ schema, profile, setProfile, persona, busy, error, onSubm
 }
 
 // ─── Resultado ───────────────────────────────────────────────
-// Texto calmo do alerta, por código. Nunca o rótulo clínico do backend
-// (ele é para a médica): ao visitante, orientação serena, em laranja.
-const REDFLAG_VISITOR_TEXT = {
-  NEOPLASIA: 'Perda de peso sem explicação junto com suor noturno intenso merece avaliação médica nas próximas semanas.',
-};
-const REDFLAG_VISITOR_FALLBACK = 'Uma das suas respostas merece avaliação médica nas próximas semanas.';
-
 function Result({ res, persona, onRestart }) {
-  const onco = res.oncology ?? {};
-  // Com alerta, a manchete acompanha o aviso (nunca "nada fora do esperado")
-  const level = res.redFlag ? 'INVESTIGAR' : onco.level;
-  const lv = oncoLevel(level);
-  const summary = visitorSummary(level, onco.conditions ?? []);
-  const conditions = onco.conditions ?? [];
-  const eligible = conditions.filter((c) => c.eligible);
-  const ineligible = conditions.filter((c) => !c.eligible);
-  const todo = buildTodo(res);
-
   return (
     <div className="space-y-6 animate-fade-in">
       {persona && <PersonaNote persona={persona} />}
 
-      <section className={clsx('glass p-5 sm:p-7 border-l-4', {
-        'border-l-green-500':  level === 'ROTINA',
-        'border-l-amber-500':  level === 'ATENÇÃO',
-        'border-l-orange-500': level === 'INVESTIGAR',
-      })}>
-        <span className={lv.badge}>{lv.label}</span>
-        <h1 className="font-display text-2xl sm:text-3xl font-bold text-surface-900 mt-3 leading-tight">{summary.headline}</h1>
-        <p className="text-surface-600 mt-2 max-w-prose leading-relaxed">{summary.text}</p>
-        {res.redFlag && (
-          <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex items-start gap-2.5">
-            <AlertTriangle size={18} className="text-orange-600 shrink-0 mt-0.5" aria-hidden />
-            <div className="text-sm">
-              <p className="text-orange-900">
-                {REDFLAG_VISITOR_TEXT[res.redFlag.code] ?? REDFLAG_VISITOR_FALLBACK}
-              </p>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section aria-labelledby="qt-cancers">
-        <h2 id="qt-cancers" className="font-display text-lg font-semibold text-surface-800 mb-3">Por tipo de câncer</h2>
-        {eligible.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2 md:items-start">
-            {eligible.map((c) => <ConditionRiskCard key={c.code} condition={c} audience="visitor" />)}
-          </div>
-        ) : (
-          <p className="text-sm text-surface-500 glass p-4">
-            Na sua idade, nenhum destes cânceres entra na triagem ainda. Veja abaixo quando começar os exames.
-          </p>
-        )}
-        {ineligible.length > 0 && (
-          <p className="text-xs text-surface-500 mt-3">
-            {ineligible.map((c) => `${c.label}: ${(c.reason || '').toLowerCase()}`).join(' ')}
-          </p>
-        )}
-      </section>
+      <NextStepCard step={res.nextStep} />
 
       <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-        <section className="glass p-5 sm:p-6" aria-labelledby="qt-screening">
-          <h2 id="qt-screening" className="font-display text-lg font-semibold text-surface-800 mb-3">Exames de rastreamento para você</h2>
-          <ScreeningList items={res.screening} future={res.futureScreening} audience="visitor" />
-        </section>
-
-        <section className="glass p-5 sm:p-6" aria-labelledby="qt-todo">
-          <h2 id="qt-todo" className="font-display text-lg font-semibold text-surface-800 mb-3">O que você pode fazer</h2>
-          <ul className="space-y-2.5">
-            {todo.map((t, i) => (
-              <li key={i} className="flex items-start gap-2.5 text-sm text-surface-700 leading-relaxed">
-                <span className={clsx('w-1.5 h-1.5 rounded-full mt-2 shrink-0', t.tone)} aria-hidden />
-                <span>{t.text}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <ExamList items={res.screening} />
+        <HabitList items={res.habits} />
       </div>
 
       <Disclaimer audience="visitor" text={QUICKTEST_DISCLAIMER} />
@@ -434,28 +363,6 @@ function Result({ res, persona, onRestart }) {
       </div>
     </div>
   );
-}
-
-// "O que você pode fazer": ação pelo nível, rastreamento e fatores mudáveis
-function buildTodo(res) {
-  const out = [];
-  const level = res.oncology?.level;
-  if (level === 'INVESTIGAR' || res.redFlag) {
-    out.push({ tone: 'bg-orange-500', text: 'Marque uma consulta (na UBS ou com o seu médico) e conte o que respondeu aqui. Na maioria das vezes a causa não é câncer, mas vale examinar.' });
-  } else if (level === 'ATENÇÃO') {
-    out.push({ tone: 'bg-amber-500', text: 'Na próxima consulta, converse com o médico sobre os itens em "Atenção" e sobre quando fazer os exames.' });
-  }
-  if (res.screening?.length) {
-    out.push({ tone: 'bg-brand-500', text: 'Mantenha em dia os exames de rastreamento da lista: eles acham o câncer cedo, quando o tratamento funciona melhor.' });
-  }
-  for (const m of res.modifiable ?? []) {
-    const cond = m.conditionLabel?.replace(/^Câncer/, 'câncer');
-    out.push(m.factor > 1
-      ? { tone: 'bg-amber-500', text: `${m.label}: deixa a chance de ${cond} ${formatFactor(m.factor)} maior. Esse fator dá para mudar.` }
-      : { tone: 'bg-green-500', text: `${m.label}: já diminui a chance de ${cond} (${formatFactor(m.factor)}). Continue assim.` });
-  }
-  out.push({ tone: 'bg-green-500', text: 'Não fumar, beber pouco, manter o peso e se movimentar reduzem o risco de vários tipos de câncer.' });
-  return out;
 }
 
 function PersonaNote({ persona }) {

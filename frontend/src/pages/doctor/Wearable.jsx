@@ -98,7 +98,8 @@ export default function DoctorWearable() {
             <div className="flex-1 min-w-0">
               <p className="font-display font-semibold text-lg text-surface-900">{patient.fullName}</p>
               <p className="text-xs text-surface-500">
-                {patient.user?.email} · {patient.gender === 'MALE' ? 'Masculino' : patient.gender === 'FEMALE' ? 'Feminino' : 'Outro'}
+                @{patient.user?.username}
+                {patient.gender && ` · ${patient.gender === 'MALE' ? 'Masculino' : patient.gender === 'FEMALE' ? 'Feminino' : 'Outro'}`}
                 {patient.bloodType && ` · ${patient.bloodType}`}
               </p>
             </div>

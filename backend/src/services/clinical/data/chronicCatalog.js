@@ -11,7 +11,9 @@ const sources = [
       + 'Prevalências e sensibilidade/especificidade compiladas pela equipe a partir da literatura.',
     url: null,
     year: null,
-    note: 'Valores herdados da v7 sem alteração; conferidos pelo golden test (tests/fixtures/golden-v7.json).',
+    note: 'FORA DE USO desde 22/10/2026 (regra R1): estes números não têm fonte publicada e não decidem mais nada. '
+      + 'A fase crônica da triagem usa escores validados com cortes oficiais (STOP-Bang, FINDRISC, PHQ-9; '
+      + 'services/clinical/chronicScores.js). Ficam no banco só como histórico da v7 (golden test).',
   },
 ];
 

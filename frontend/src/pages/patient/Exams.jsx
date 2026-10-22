@@ -15,8 +15,6 @@ const STATUS_META = {
   ERROR:      { label: 'Erro',          icon: AlertCircle,  color: 'text-red-600' },
 };
 
-const RISK_CLASS = { LOW: 'badge-low', MODERATE: 'badge-moderate', HIGH: 'badge-high', CRITICAL: 'badge-critical' };
-const RISK_LABEL = { LOW: 'Baixo', MODERATE: 'Moderado', HIGH: 'Alto', CRITICAL: 'Crítico' };
 
 function UploadZone({ onUploaded }) {
   const [file,  setFile]  = useState(null);
@@ -128,9 +126,11 @@ export default function PatientExams() {
                 </p>
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                {exam.examResult?.riskLevel && (
-                  <span className={RISK_CLASS[exam.examResult.riskLevel]}>
-                    {RISK_LABEL[exam.examResult.riskLevel]}
+                {exam.examResult && (
+                  <span className={exam.examResult.outOfRange ? 'badge-moderate' : 'badge-green'}>
+                    {exam.examResult.outOfRange
+                      ? `${exam.examResult.outOfRange} fora da faixa`
+                      : 'Dentro da faixa'}
                   </span>
                 )}
                 <div className="flex items-center gap-1 text-xs">

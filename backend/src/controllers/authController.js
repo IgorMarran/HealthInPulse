@@ -1,39 +1,23 @@
 const authService = require('../services/authService');
 const prisma      = require('../config/database');
 
-// Campos que o cadastro aceita no perfil de cada papel (os mesmos que a
-// RegisterPage manda). O resto do corpo (healthCoins, id, userId...) é
-// ignorado: sem isso, quem se cadastra escolhia o próprio saldo de coins.
-const PROFILE_FIELDS = {
-  PATIENT: ['fullName', 'cpf', 'dateOfBirth', 'gender', 'phone'],
-  DOCTOR:  ['fullName', 'crm', 'specialty', 'phone'],
-};
-
-const pickProfile = (role, body = {}) => {
-  const profile = Object.fromEntries(
-    (PROFILE_FIELDS[role] ?? [])
-      .filter((field) => typeof body[field] === 'string')
-      .map((field) => [field, body[field]]),
-  );
-  // O <input type="date"> manda "AAAA-MM-DD"; o Prisma só aceita data completa
-  if (profile.dateOfBirth !== undefined) {
-    const dob = new Date(profile.dateOfBirth);
-    if (Number.isNaN(dob.getTime())) {
-      throw Object.assign(new Error('Data de nascimento inválida'), { status: 422 });
-    }
-    profile.dateOfBirth = dob;
-  }
-  return profile;
-};
+// Usuário é gravado e procurado sempre em minúsculas, sem espaços
+const normUsername = (u) => (typeof u === 'string' ? u.trim().toLowerCase() : '');
 
 /**
  * POST /auth/register
+ * Só paciente se cadastra, e só com usuário, nome e senha. O resto do
+ * corpo (role, healthCoins, cpf...) é ignorado: sem isso, quem se cadastra
+ * escolhia o próprio saldo de coins ou o próprio papel.
  */
 const register = async (req, res, next) => {
   try {
-    const { email, password, role } = req.body;
-    const profileData = pickProfile(role, req.body);
-    const result = await authService.register({ email, password, role, profileData });
+    const { password, fullName } = req.body;
+    const result = await authService.register({
+      username: normUsername(req.body.username),
+      password: String(password),
+      fullName: String(fullName).trim(),
+    });
     res.status(201).json(result);
   } catch (err) {
     next(err);
@@ -45,8 +29,10 @@ const register = async (req, res, next) => {
  */
 const login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-    const result = await authService.login({ email, password });
+    const result = await authService.login({
+      username: normUsername(req.body.username),
+      password: req.body.password,
+    });
     res.json(result);
   } catch (err) {
     next(err);
@@ -95,10 +81,27 @@ const changePassword = async (req, res, next) => {
 };
 
 /**
+ * POST /auth/tutorial-seen
+ */
+const tutorialSeen = async (req, res, next) => {
+  try {
+    await authService.markTutorialSeen(req.user.id);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
  * GET /auth/me
  */
 const me = async (req, res) => {
-  const { id, email, role } = req.user;
+  const { id, role } = req.user;
+
+  const u = await prisma.user.findUnique({
+    where:  { id },
+    select: { username: true, tutorialSeenAt: true },
+  });
 
   let fullName = null;
   let healthCoins = null;
@@ -114,7 +117,13 @@ const me = async (req, res) => {
     fullName = d?.fullName ?? null;
   }
 
-  res.json({ user: { id, email, role, fullName, healthCoins } });
+  res.json({
+    user: {
+      id, role, fullName, healthCoins,
+      username:       u?.username ?? null,
+      tutorialSeenAt: u?.tutorialSeenAt ?? null,
+    },
+  });
 };
 
-module.exports = { register, login, refresh, logout, changePassword, me, pickProfile, PROFILE_FIELDS };
+module.exports = { register, login, refresh, logout, changePassword, tutorialSeen, me };

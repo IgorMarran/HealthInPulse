@@ -70,12 +70,19 @@ test('mulher de 22: nenhuma pergunta, tudo ROTINA e rastreio só no futuro', () 
   assert.ok(r.futureScreening.length >= 1);
 });
 
-test('hemoptise em ex-fumante de 67: pulmão INVESTIGAR', () => {
-  const profile = { age: 67, sex: 'male', smoker: true, packYears: 30, quitYears: 5 };
-  const { result } = runAll(profile, (code) => code === 'hemoptise');
-  const lung = result.oncology.conditions.find(c => c.code === 'CA_PULMAO');
-  assert.equal(lung.level, 'INVESTIGAR');
-  assert.equal(result.oncology.level, 'INVESTIGAR');
+// Fatores do fumo com dados brasileiros (Campos 2024): fumante × 3,08,
+// ex-fumante × 1,52. Com hemoptise, o fumante passa de 3% e o ex-fumante
+// (parou há 5 anos) fica em ATENÇÃO, perto de 2,6%.
+test('hemoptise aos 67: fumante INVESTIGAR, ex-fumante ATENÇÃO', () => {
+  const lungFor = (quitYears) => {
+    const profile = { age: 67, sex: 'male', smoker: true, packYears: 30, quitYears };
+    const { result } = runAll(profile, (code) => code === 'hemoptise');
+    return { lung: result.oncology.conditions.find(c => c.code === 'CA_PULMAO'), result };
+  };
+  const now = lungFor(0);
+  assert.equal(now.lung.level, 'INVESTIGAR');
+  assert.equal(now.result.oncology.level, 'INVESTIGAR');
+  assert.equal(lungFor(5).lung.level, 'ATENÇÃO');
 });
 
 test('red flag (perda de peso + suor noturno) encerra na hora', () => {

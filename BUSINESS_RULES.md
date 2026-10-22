@@ -4,6 +4,16 @@ Este documento descreve em detalhes **todas** as regras de negócio
 implementadas hoje no backend, organizadas por domínio. Sempre que possível
 referencia o arquivo/função responsável.
 
+Duas regras valem para tudo (design de 22/10/2026,
+`Docs/superpowers/specs/2026-10-22-correcoes-do-grupo-e-base-com-fonte-design.md`):
+
+- **R1. Base com fonte.** Todo número que o motor ou a IA usa tem fonte do nível
+  do Guyton & Hall (livro-texto, diretriz oficial, base oficial), documentada.
+  Sem fonte, não entra.
+- **R2. O paciente nunca ouve doença.** Tela, API, socket e o `/teste` do
+  paciente não carregam nome, código nem probabilidade de doença. O filtro é
+  no backend (`services/patientView.js`). A médica vê o risco por doença.
+
 ---
 
 ## 1. Autenticação e autorização
@@ -12,18 +22,25 @@ referencia o arquivo/função responsável.
 
 Implementado em `services/authService.js::register`.
 
-- E-mail deve ser único (HTTP 409 se existir).
+- **Só paciente se cadastra**, com **usuário, nome e senha**. A médica já tem
+  login pronto (seed). O resto do corpo é ignorado (`role`, `cpf`, `healthCoins`...).
+- Usuário: 3 a 30 caracteres, letras minúsculas sem acento, números, `.` e `_`;
+  gravado em minúsculas; único (HTTP 409 "Esse usuário já existe, escolha outro").
 - Senha mínima de **8 caracteres** (validado em `routes/authRoutes.js`).
-- Role aceita **`PATIENT`** ou **`DOCTOR`** apenas (admin não é criado via API).
 - Senha é guardada como hash bcrypt com **12 rounds**.
-- O perfil específico (`Patient` ou `Doctor`) é criado em **transação única**
-  junto com o `User`.
+- O `Patient` é criado em **transação única** junto com o `User` e já sai
+  **vinculado a toda médica cadastrada** (`DoctorPatient`), para o alerta da
+  triagem ter destino.
 - Imediatamente após cadastrar, o backend emite o par de tokens — o usuário já
-  sai logado.
+  sai logado. `User.tutorialSeenAt` nasce nulo: o primeiro acesso começa pela
+  triagem e o tutorial das abas abre depois do resultado (ou em "Fazer depois").
+  `POST /api/auth/tutorial-seen` grava como visto.
 
 ### 1.2 Login (`POST /api/auth/login`)
 
-- E-mail e senha são obrigatórios.
+- Usuário e senha são obrigatórios (o login é por **usuário**, não e-mail).
+- Erro: 401 "Usuário ou senha inválidos". O interceptor do frontend não trata
+  esse 401 como sessão expirada (não recarrega a página nem apaga o formulário).
 - Usuário precisa estar com `isActive=true`.
 - Comparação de senha via `bcrypt.compare`.
 - **Em todo login bem-sucedido**: registra um `AuditLog` com `action='LOGIN'`.
@@ -94,8 +111,9 @@ stand` nunca liga o portão, mesmo com a variável no ambiente ou no `.env`.
 
 ### 2.1 Estrutura do perfil
 
-`Patient` tem campos cadastrais (CPF único, data de nascimento, sexo, tipo
-sanguíneo, altura, peso), contato de emergência e os arrays JSON-serializados:
+`Patient` tem campos cadastrais opcionais (data de nascimento, sexo, tipo
+sanguíneo, altura, peso; o CPF saiu do app e a coluna ficou só para dados
+antigos). Idade e sexo do motor vêm da triagem, contato de emergência e os arrays JSON-serializados:
 
 - **`allergies`** — lista de strings (ex: `["Penicilina", "Dipirona"]`)
 - **`chronicConds`** — condições crônicas (ex: `["Hipertensão", "DM2"]`)
@@ -105,17 +123,17 @@ Esses arrays são desserializados automaticamente quando saem da API (via
 
 ### 2.2 Faixas normais (base clínica)
 
-Definidas no frontend em `pages/patient/Dashboard.jsx` (constante `RANGES`) e
-documentadas em `pages/doctor/Reference.jsx`. **Origem**: livro de fisiologia
-do projeto (ver `Docs/Dados do Livro.docx`).
+Fonte única no backend: `services/clinical/data/prevention.js` (`normalRanges`,
+com `sourceCode` de cada faixa no `ClinicalSource`). O frontend repete em
+`pages/patient/Dashboard.jsx` (`RANGES`). Fichas: `Docs/base-clinica-fisiologia.md`.
 
-| Vital              | Normal           | Atenção              |
-|--------------------|------------------|----------------------|
-| Frequência cardíaca| 60–100 bpm       | <60 bradi · >100 taqui |
-| Pressão sistólica  | 90–130 mmHg      | >130 limítrofe       |
-| SpO₂               | 95–99%           | <95% atenção         |
-| Temperatura        | 35,8–37,3 °C     | ≥37,5 °C febre       |
-| Glicose            | 70–110 mg/dL     | >130 atenção         |
+| Vital              | Normal                | Fonte                                   |
+|--------------------|-----------------------|-----------------------------------------|
+| Frequência cardíaca| 60–100 bpm            | Guyton & Hall (taqui >100, bradi <60)    |
+| SpO₂               | a partir de 95%       | Guyton & Hall (gasometria 95–99%)        |
+| Pressão            | < 120 / < 80 mmHg     | Diretriz Brasileira de Hipertensão 2025  |
+| Temperatura        | sem faixa             | o livro só dá 37,0 °C, sem corte de febre |
+| Glicose (pulseira) | sem faixa             | a pulseira não sabe se é jejum           |
 
 > Esses limites são usados para classificar status de cada vital ("normal /
 > acima / abaixo") e para calcular o **score de saúde** do paciente.
@@ -217,16 +235,28 @@ Esses fatores entram **só no prior** (`PriorRule`), nunca como sintoma.
 
 ### 4.3 Fase crônica ("etapa 1 de 2")
 
-Oito doenças (apneia, cardiovascular, DM2, hipotireoidismo, síndrome metabólica,
-depressão, arritmia, DPOC), idêntica à v7 (um teste "golden" compara com a v7):
+Desde a auditoria de 22/10/2026 (R1), **escores validados com os cortes
+oficiais**, sem porcentagem (`clinical/chronicScores.js`). O motor bayesiano da
+v7 saiu da triagem: os LRs por sintoma não tinham fonte (os números continuam no
+banco como histórico, marcados "fora de uso"; o golden test ainda confere o
+código antigo).
 
-- evidência objetiva da pulseira entra no Bayes com peso máximo;
-- a próxima pergunta é a de maior **ganho de informação por custo**, com
-  penalização de redundância e modo "alvo" quando uma hipótese lidera;
-- após cada resposta, os **red flags** (`redFlags.js`, em código) são verificados;
-- encerra com posterior ≥ 80% ou 18 perguntas;
-- STOP-BANG, PHQ-9, FINDRISC e Framingham são calculados em paralelo e
-  reforçam o nível (PHQ-9 grave = CRITICAL; os outros sobem até HIGH).
+| Condição  | Escore      | Corte (faixa)                                | Fonte                         |
+|-----------|-------------|----------------------------------------------|-------------------------------|
+| Apneia    | STOP-Bang   | 0–2 baixo · 3–4 intermediário · 5–8 alto      | Chung 2016                    |
+| DM2       | FINDRISC    | < 7 · 7–11 · 12–14 · 15–20 alto · > 20 muito alto | SBD 2025 (Tabela 2)       |
+| Depressão | PHQ-2 → PHQ-9 | PHQ-2 ≥ 3 abre o PHQ-9; PHQ-9 ≥ 10          | Kroenke 2003/2001, Levis 2019 |
+
+- Perguntas fixas, nesta ordem: sinais de alarme (dor no peito, déficit
+  neurológico, pior dor de cabeça, desmaio), PHQ-2, STOP-Bang, FINDRISC e, se o
+  PHQ-2 der ≥ 3, o resto do PHQ-9. A história familiar de diabetes vem do perfil.
+- Após cada resposta, os **red flags** (`redFlags.js`) são verificados.
+- Nível: HIGH se STOP-Bang ≥ 5, FINDRISC > 20 ou PHQ-9 ≥ 20; MODERATE se algum
+  passa do corte; senão LOW. É um mapeamento das faixas oficiais, sem corte de
+  probabilidade.
+- Saíram por falta de fonte: CV/HAS, síndrome metabólica, arritmia/FA, DPOC e
+  hipotireoidismo. A pulseira não vira mais "sintoma" (as conversões tinham
+  pesos inventados); ela aparece contra a faixa normal e nos alarmes.
 
 ### 4.4 Fase oncológica ("etapa 2 de 2")
 
@@ -315,21 +345,30 @@ já foi respondido continua no resultado.
 
 | Nível      | Quando ocorre                                                               |
 |------------|------------------------------------------------------------------------------|
-| `LOW`      | crônico baixo, câncer em ROTINA e sem red flag                              |
-| `MODERATE` | crônico moderado, ou algum câncer em ATENÇÃO                                |
-| `HIGH`     | crônico alto, red flag não emergencial, ou algum câncer em INVESTIGAR       |
-| `CRITICAL` | emergência (red flag) ou PHQ-9 grave; no demo, o João por DM2 ≥ 85%         |
+| `LOW`      | escores abaixo dos cortes, câncer em ROTINA e sem red flag                  |
+| `MODERATE` | algum escore acima do corte, ou algum câncer em ATENÇÃO                     |
+| `HIGH`     | escore em faixa alta, red flag não emergencial, ou câncer em INVESTIGAR; no demo, o João (STOP-Bang 6, FINDRISC 23) |
+| `CRITICAL` | emergência (red flag)                                                       |
 
 Depois: grava `COMPLETED`, cria o `AiReport` (`triage`), gera as metas (§5.3),
-credita +20 coins e emite `triage:completed` ao paciente. Câncer em INVESTIGAR cria
+credita +20 coins e emite `triage:completed` ao paciente (só com o próximo passo). Câncer em INVESTIGAR cria
 uma `Notification` ALERT para as médicas vinculadas; HIGH/CRITICAL emitem
-`triage:alert` (§8.2). O confete só sai quando não há risco algum.
+`triage:alert` (§8.2). O confete só sai quando o próximo passo é manter a rotina.
 
 ### 4.9 Sugestões
 
-Por nível (HIGH/CRITICAL: avaliação em 24h; MODERATE: consulta em até 7 dias; LOW:
-manter a rotina), mais exames conforme as escalas e, por câncer, "procurar
-avaliação médica sobre X (não é diagnóstico)" ou o rastreamento indicado.
+As `suggestions` do `AiReport` continuam com o texto clínico, mas são **da médica**.
+O paciente recebe o **próximo passo** (`patientView.nextStepFor`):
+
+| Resultado do motor                                                         | Próximo passo do paciente |
+|----------------------------------------------------------------------------|---------------------------|
+| red flag                                                                   | `AGORA` (192, ou 188 no CVV) |
+| câncer em ATENÇÃO/INVESTIGAR, rastreamento ALTO_RISCO, crônica ≠ LOW        | `CONSULTA`                |
+| LOW e nada acima                                                           | `ROTINA`                  |
+
+Junto vão os sinais da pulseira contra a faixa normal e os exames preventivos
+POPULACIONAL e de decisão compartilhada (sem dizer o que previnem). Sem prazo
+sem fonte ("24h", "7 dias") para o paciente.
 
 ### 4.10 Onde o LLM e o simulador ainda entram
 
@@ -370,22 +409,24 @@ da médica (§6) e texto de apoio. O `aiSimulator` é determinístico, por palav
 
 ### 5.3 Geração automática a partir da triagem
 
-`goalService.generateGoalsFromTriage(patientId, analysis, triageId)`:
+`goalService.generateGoalsFromTriage(patientId, { profile, wearable, nextStep }, triageId)`.
+Meta só nasce de um modelo de `data/prevention.js` (`goalTemplates`), e todo
+modelo tem fonte (`HealthGoal.sourceCode`) ou vem do próximo passo. O texto
+nunca cita doença. Meta com o mesmo `templateCode` já ativa não é recriada.
 
-**Sempre cria 2 metas universais**:
-- Hidratação diária (≥7 copos) — 30 coins
-- Caminhar 7000 passos/dia — 50 coins
+| Modelo             | Quando                                  | Fonte                         |
+|--------------------|-----------------------------------------|-------------------------------|
+| `CONSULTA`         | próximo passo = CONSULTA                | resultado da triagem          |
+| `PARAR_DE_FUMAR`   | fuma (4 sessões iniciais no SUS)        | MS, PCDT do tabagismo 2020    |
+| `ATIVIDADE_150`    | todo adulto (150 min/semana)            | OMS 2020 · MS 2021            |
+| `REDUZIR_ALCOOL`   | bebe alguma dose por semana             | OMS 2023 · INCA 2024          |
+| `IMC_NORMAL`       | IMC ≥ 25 (peso do IMC 24,9)             | OMS (TRS 894)                 |
+| `FC_REPOUSO_NORMAL`| FC de repouso da pulseira > 100         | Guyton & Hall                 |
+| `PA_NORMAL`        | pulseira ≥ 130 e/ou ≥ 80 (< 130/80)     | Diretriz de Hipertensão 2025  |
 
-**Adapta com base no risco**:
-
-| Risco         | Metas adicionais                                                    |
-|---------------|---------------------------------------------------------------------|
-| `HIGH` / `CRITICAL` | Controlar PA sist. ≤130 (80c) · Reduzir glicemia ≤130 (80c)  |
-| `MODERATE`    | Estabilizar glicemia ≤110 (60c) · PA sist. ≤125 (60c)              |
-| `LOW`         | Manter sono entre 7-9h (40c)                                       |
-| `INCONCLUSIVE`| Refazer triagem em 7 dias (25c)                                    |
-
-Total típico: **4–5 metas geradas por triagem**.
+Saíram por falta de fonte do mesmo nível: água 2 L, 7000 passos, sono 7–9 h,
+glicemia < 130/110, PA < 125, "nova triagem em 7 dias". A lista vai com a fonte
+em texto curto (`sourceLabel`).
 
 ### 5.4 Health Coins
 
@@ -466,7 +507,9 @@ Apenas médicos vinculados. Em `aiReportRoutes.js::generateFullReport`:
 ### 6.3 Acesso aos relatórios
 
 - **Paciente** lista os seus em `GET /api/ai-reports` e abre detalhe em
-  `/my/:reportId`.
+  `/my/:reportId`, sempre na versão do paciente (`patientView.reportForPatient`):
+  o de triagem vira a visão de prevenção; os outros aparecem só com o aviso
+  "feito para a sua médica". Sem `content`, `riskLevel` nem `suggestions`.
 - **Médico** abre o detalhe de um relatório do seu paciente em
   `/doctor/:reportId` (com `assertLink`).
 
@@ -660,7 +703,9 @@ Prisma 5 rejeita strings em `skip`/`take`.
 | Conflito de agenda do médico bloqueia novo agendamento                     | `appointmentRoutes.create` testa janela ±duration     |
 | Triagem com risco HIGH/CRITICAL avisa só as médicas vinculadas             | Socket.io `triage:alert` para a sala `user:<userId>` de cada vínculo (`DoctorPatient`) |
 | Teste rápido público não grava nada e não loga o corpo                     | `quickTestService` puro; `publicRoutes` sem Prisma de escrita; morgan só registra a URL |
-| Câncer nunca sai como diagnóstico                                          | Categoria + "estimativa didática" + disclaimer em toda tela de resultado |
+| Câncer nunca sai como diagnóstico                                          | Categoria + "estimativa didática" + disclaimer em toda tela da médica |
+| Paciente e visitante nunca recebem doença (R2)                             | `patientView` em toda rota/evento do paciente e no `/teste`; contrato em `tests/r2.patient.test.js` |
+| Meta e faixa normal só com fonte (R1)                                      | `data/prevention.js` (`sourceCode` no `ClinicalSource`); teste em `onco.personas.db.test.js` |
 | Fator demográfico/de risco entra só no prior; sintoma/exame/balança só como likelihood | Teste de contrato (`kb.priors.test.js`) |
 | Base de conhecimento só é editável com `KB_EDIT=true`                      | `knowledgeService.assertEditable` (fail-closed: ausente ou outro valor = 403) |
 | Toda edição da base deixa histórico e muda a versão                        | `KnowledgeVersion` gravada na mesma transação do PATCH |
@@ -793,10 +838,10 @@ mudar, o seed falha alto em vez de levar o problema para o stand.
 
 | Persona | Credenciais | Câncer | Triagem |
 |---|---|---|---|
-| **Roberto**, 63, ex-fumante (35 maços-ano, parou há 8 anos) | `roberto@healthinpulse.dev` / `Roberto@123` | **colorretal em INVESTIGAR** (FIT+, Hb 10,9, balança -9,5% em 90 dias, mudança no intestino); pulmão em ATENÇÃO | HIGH; médica recebe o alerta |
-| **Marina**, 34 | `marina@healthinpulse.dev` / `Marina@123` | **mama em ATENÇÃO** (história familiar); colo do útero em rotina; mamografia e DNA-HPV indicados | MODERATE (crônico LOW) |
-| **João**, 58 | `joao@healthinpulse.dev` / `Joao@123` | tudo em ROTINA (FIT indicado agora; PSA por decisão compartilhada) | CRITICAL pela parte crônica (DM2) |
-| **Dra. Ana Beatriz Souza** | `doctor@healthinpulse.dev` / `Doctor@123` | vinculada aos três | |
+| **Roberto**, 63, ex-fumante (35 maços-ano, parou há 8 anos) | `roberto` (senha no slide 5) | **colorretal em INVESTIGAR** (FIT+, Hb 10,9, balança -9,5% em 90 dias, mudança no intestino); pulmão em ATENÇÃO | HIGH; médica recebe o alerta |
+| **Marina**, 34 | `marina` (senha no slide 5) | **mama em ATENÇÃO** (história familiar); colo do útero em rotina; mamografia e DNA-HPV indicados | MODERATE (crônico LOW) |
+| **João**, 58 | `joao` (senha no slide 5) | tudo em ROTINA (FIT indicado agora; PSA por decisão compartilhada) | CRITICAL pela parte crônica (DM2) |
+| **Dra. Ana Beatriz Souza** | `ana` (senha no slide 5) | vinculada aos três | |
 
 ## 19. Operação: testes, stand e Render
 

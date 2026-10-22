@@ -3,8 +3,8 @@ import {
   AlertCircle, Info, ExternalLink,
 } from 'lucide-react';
 
-// Base clínica extraída do livro de referência usado no projeto.
-// Documentado em /Docs/Dados do Livro.docx
+// Base clínica extraída do livro de referência usado no projeto
+// (Guyton & Hall). Ficha de cada valor: Docs/base-clinica-fisiologia.md
 const REFERENCES = [
   {
     id:        'temperature',
@@ -12,11 +12,11 @@ const REFERENCES = [
     color:     '#d97706',
     title:     'Temperatura corporal',
     normal:    '37,0 °C',
-    range:     'até 37,4 °C',
-    alert:     '≥ 37,5 °C indica febre na prática clínica',
+    range:     'o livro não define faixa',
+    alert:     'sem limite de febre no livro: o app não gera alerta de temperatura',
     chapter:   'Capítulo 74',
     pages:     ['p. 53 (tabela de valores normais)', 'p. 2626 (capítulo sobre controle térmico e febre)'],
-    notes:     'O livro reforça 37,0 °C como valor normal. A definição prática de febre varia entre 37,5–38 °C.',
+    notes:     'O livro reforça 37,0 °C como valor normal. Como ele não define o corte de febre, o HealthInPulse não usa um (regra R1: sem número sem fonte).',
   },
   {
     id:        'heartRate',
@@ -49,10 +49,10 @@ const REFERENCES = [
     title:     'Movimento',
     normal:    '—',
     range:     'sem critério quantitativo no livro',
-    alert:     'regra de inatividade definida pelo sistema',
+    alert:     'sem regra: o livro não define critério',
     chapter:   'Contexto fisiológico e neuromuscular',
     pages:     ['(referências fisiológicas dispersas, sem regra de negócio pronta)'],
-    notes:     'O livro discute movimento em contexto neuromuscular, sem definir uma regra do tipo "sem movimento por X minutos". A regra de inatividade fica a critério do HealthInPulse — ex: alerta após 4h sem variação significativa.',
+    notes:     'O livro discute movimento em contexto neuromuscular, sem definir uma regra do tipo "sem movimento por X minutos". Por isso o HealthInPulse não cria alerta de inatividade (regra R1: sem número sem fonte).',
   },
 ];
 
@@ -152,11 +152,11 @@ export default function DoctorReference() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-amber-600 font-bold mt-[1px]">›</span>
-                Para temperatura, o livro reforça <strong>37 °C</strong> como normal, mas a definição prática de febre varia (≥ 37,5–38 °C).
+                Para temperatura, o livro reforça <strong>37 °C</strong> como normal e não define corte de febre: o app não alerta temperatura.
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-amber-600 font-bold mt-[1px]">›</span>
-                Movimento não possui critério quantitativo direto no livro. O sistema deve definir regras próprias (ex: inatividade prolongada).
+                Movimento não possui critério quantitativo direto no livro, então o app não cria regra de inatividade.
               </li>
             </ul>
           </div>

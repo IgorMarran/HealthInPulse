@@ -10,6 +10,7 @@ export const authService = {
   logout:         ()     => api.post('/auth/logout', { refreshToken: localStorage.getItem('refreshToken') }),
   me:             ()     => api.get('/auth/me'),
   changePassword: (data) => api.post('/auth/change-password', data),
+  tutorialSeen:   ()     => api.post('/auth/tutorial-seen'),
 };
 
 // ─── Patient ─────────────────────────────────────────────────

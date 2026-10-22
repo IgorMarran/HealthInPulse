@@ -1,5 +1,6 @@
 const prisma = require('../config/database');
 const coinService = require('./coinService');
+const { goalTemplates, sourceShort } = require('./clinical/data/prevention');
 
 const computeProgress = (goal, current) => {
   if (current == null) return goal.progress ?? 0;
@@ -30,12 +31,14 @@ const computeProgress = (goal, current) => {
   return goal.progress ?? 0;
 };
 
+// A fonte vai junto, em texto curto (as das metas não citam doença)
 const listGoals = async (patientId, { status } = {}) => {
   const where = { patientId, ...(status ? { status } : {}) };
-  return prisma.healthGoal.findMany({
+  const goals = await prisma.healthGoal.findMany({
     where,
     orderBy: [{ status: 'asc' }, { startedAt: 'desc' }],
   });
+  return goals.map(g => ({ ...g, sourceLabel: g.sourceCode ? sourceShort[g.sourceCode] ?? null : null }));
 };
 
 const createGoal = async (patientId, data) => {
@@ -92,102 +95,29 @@ const updateProgress = async (goalId, current, patientId) => {
   return { goal: updated, justCompleted: justFinished };
 };
 
-/**
- * Gera metas iniciais para um paciente a partir do resultado de uma triagem.
- * `analysis` é o objeto retornado pelo openaiService (riskLevel + suggestions + summary).
- */
-const generateGoalsFromTriage = async (patientId, analysis, triageId) => {
+// ─── Metas a partir da triagem ─────────────────────────────────────
+// Só nasce meta de um modelo de data/prevention.js, e todo modelo tem
+// fonte (regra R1) ou vem do próximo passo da triagem (consulta). Meta
+// igual a uma que já está ativa não é criada de novo.
+//
+// ctx = { profile (normalizado), wearable (snapshot da pulseira), nextStep }
+const generateGoalsFromTriage = async (patientId, ctx, triageId) => {
+  const safe = { profile: ctx?.profile ?? {}, wearable: ctx?.wearable ?? {}, nextStep: ctx?.nextStep ?? null };
+  const active = await prisma.healthGoal.findMany({
+    where:  { patientId, status: 'ACTIVE', templateCode: { not: null } },
+    select: { templateCode: true },
+  });
+  const already = new Set(active.map(g => g.templateCode));
+
   const created = [];
-  const goalsToCreate = [];
-
-  const risk = analysis?.riskLevel || 'INCONCLUSIVE';
-
-  // Metas universais (sempre criadas no início)
-  goalsToCreate.push({
-    title:       'Hidratação diária',
-    description: 'Beba pelo menos 2 litros de água por dia',
-    metric:      'custom',
-    targetCmp:   'gte',
-    targetValue: 7,
-    rangeMin:    0,
-    coinsReward: 30,
-  });
-
-  goalsToCreate.push({
-    title:       'Caminhar 30 min/dia',
-    description: 'Atividade aeróbica leve para manter o coração saudável',
-    metric:      'steps',
-    targetCmp:   'gte',
-    targetValue: 7000,
-    rangeMin:    0,
-    coinsReward: 50,
-  });
-
-  // Metas adaptadas pelo nível de risco
-  if (risk === 'HIGH' || risk === 'CRITICAL') {
-    goalsToCreate.push({
-      title:       'Controlar pressão arterial',
-      description: 'Manter pressão sistólica abaixo de 130 mmHg',
-      metric:      'systolic',
-      targetCmp:   'lte',
-      targetValue: 130,
-      rangeMax:    160,
-      coinsReward: 80,
-    });
-    goalsToCreate.push({
-      title:       'Reduzir glicemia em jejum',
-      description: 'Trazer glicemia média para abaixo de 130 mg/dL',
-      metric:      'glucose',
-      targetCmp:   'lte',
-      targetValue: 130,
-      rangeMax:    200,
-      coinsReward: 80,
-    });
-  } else if (risk === 'MODERATE') {
-    goalsToCreate.push({
-      title:       'Estabilizar glicemia',
-      description: 'Manter glicemia média abaixo de 110 mg/dL',
-      metric:      'glucose',
-      targetCmp:   'lte',
-      targetValue: 110,
-      rangeMax:    130,
-      coinsReward: 60,
-    });
-    goalsToCreate.push({
-      title:       'Pressão dentro do alvo',
-      description: 'Manter pressão sistólica abaixo de 125 mmHg',
-      metric:      'systolic',
-      targetCmp:   'lte',
-      targetValue: 125,
-      rangeMax:    140,
-      coinsReward: 60,
-    });
-  } else if (risk === 'LOW') {
-    goalsToCreate.push({
-      title:       'Manter sono regular',
-      description: 'Dormir entre 7 e 9 horas por noite',
-      metric:      'custom',
-      targetCmp:   'between',
-      rangeMin:    7,
-      rangeMax:    9,
-      coinsReward: 40,
-    });
-  } else {
-    // INCONCLUSIVE: meta de fazer triagem novamente
-    goalsToCreate.push({
-      title:       'Nova triagem em 7 dias',
-      description: 'Refazer a triagem para confirmar tendências',
-      metric:      'custom',
-      targetCmp:   'gte',
-      targetValue: 1,
-      rangeMin:    0,
-      coinsReward: 25,
-    });
-  }
-
-  for (const g of goalsToCreate) {
+  for (const t of goalTemplates) {
+    if (already.has(t.code) || !t.when(safe)) continue;
     const goal = await prisma.healthGoal.create({
-      data: { patientId, ...g, source: 'triage', progress: 0, status: 'ACTIVE' },
+      data: {
+        patientId, ...t.build(safe),
+        source: 'triage', templateCode: t.code, sourceCode: t.sourceCode,
+        progress: 0, status: 'ACTIVE',
+      },
     });
     created.push(goal);
   }
