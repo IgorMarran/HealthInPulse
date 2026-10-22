@@ -56,7 +56,7 @@ const SYMPTOM_QUESTIONS = [
   q(S.APNEIA_OBSERVADA, 'Alguém já observou você parar de respirar durante o sono?', 'boolean', { cost: 2, scaleTag: 'stop-bang' }),
   q(S.FADIGA_DIURNA, 'Sente-se frequentemente cansado(a) ou sonolento(a) durante o dia?', 'boolean', { cost: 1, scaleTag: 'stop-bang' }),
   q(S.CEFALEIA_MATINAL, 'Acorda com dor de cabeça pela manhã com frequência?', 'boolean', { cost: 1 }),
-  q(S.PESCOCO_LARGO, 'Sua circunferência do pescoço é maior que 40 cm (homens) ou 35 cm (mulheres)?', 'boolean', { cost: 2, scaleTag: 'stop-bang' }),
+  q(S.PESCOCO_LARGO, 'Sua circunferência do pescoço é maior que 40 cm?', 'boolean', { cost: 2, scaleTag: 'stop-bang' }),
   q(S.PALPITACOES_NOTURNAS, 'Tem palpitações durante o sono?', 'boolean', { cost: 1 }),
 
   // ── Cardiovascular

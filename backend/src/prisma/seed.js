@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const { seedKnowledge } = require('./seedKnowledge');
+const { goalTemplates } = require('../services/clinical/data/prevention');
 
 // O seed faz as triagens das personas pelo triageService, que carrega
 // config/socket → config/jwt: sem JWT_ACCESS_SECRET e JWT_REFRESH_SECRET
@@ -124,22 +125,19 @@ async function main() {
   // ─── Limpa o seed anterior ────────────────────────────────
   await prisma.user.deleteMany({
     where: {
-      email: {
-        in: [
-          'doctor@healthinpulse.dev',
-          'patient@healthinpulse.dev', // Carlos (legado)
-          'joao@healthinpulse.dev',
-          'marina@healthinpulse.dev',
-          'roberto@healthinpulse.dev',
-        ],
-      },
+      OR: [
+        { username: { in: ['ana', 'joao', 'marina', 'roberto'] } },
+        { email: { in: ['patient@healthinpulse.dev'] } }, // Carlos (legado)
+      ],
     },
   });
 
   // ─── Médica ────────────────────────────────────────────────
   const doctorUser = await prisma.user.create({
     data: {
+      username:      'ana',
       email:         'doctor@healthinpulse.dev',
+      tutorialSeenAt: new Date(), // demo não abre o tutorial
       passwordHash:  await hash('Doctor@123'),
       role:          'DOCTOR',
       emailVerified: true,
@@ -161,7 +159,9 @@ async function main() {
   console.log('  → João Carlos Mendes (caso grave)');
   const joaoUser = await prisma.user.create({
     data: {
+      username:      'joao',
       email:         'joao@healthinpulse.dev',
+      tutorialSeenAt: new Date(), // demo não abre o tutorial
       passwordHash:  await hash('Joao@123'),
       role:          'PATIENT',
       emailVerified: true,
@@ -170,7 +170,6 @@ async function main() {
           fullName:       'João Carlos Mendes',
           dateOfBirth:    new Date('1968-04-12'),
           gender:         'MALE',
-          cpf:            '321.654.987-00',
           phone:          '11 98800-1100',
           bloodType:      'A+',
           height:         174,
@@ -373,7 +372,9 @@ Recomenda-se acompanhamento médico contínuo, ajuste terapêutico para controle
   console.log('  → Marina Azevedo Lima (caso preventivo)');
   const marinaUser = await prisma.user.create({
     data: {
+      username:      'marina',
       email:         'marina@healthinpulse.dev',
+      tutorialSeenAt: new Date(), // demo não abre o tutorial
       passwordHash:  await hash('Marina@123'),
       role:          'PATIENT',
       emailVerified: true,
@@ -382,7 +383,6 @@ Recomenda-se acompanhamento médico contínuo, ajuste terapêutico para controle
           fullName:       'Marina Azevedo Lima',
           dateOfBirth:    new Date('1992-09-23'),
           gender:         'FEMALE',
-          cpf:            '987.123.654-00',
           phone:          '11 99700-2200',
           bloodType:      'O+',
           height:         166,
@@ -560,7 +560,9 @@ A detecção precoce permite intervenção **antes** da evolução para um quadr
   console.log('  → Roberto Alves Pereira (caso oncológico)');
   const robertoUser = await prisma.user.create({
     data: {
+      username:      'roberto',
       email:         'roberto@healthinpulse.dev',
+      tutorialSeenAt: new Date(), // demo não abre o tutorial
       passwordHash:  await hash('Roberto@123'),
       role:          'PATIENT',
       emailVerified: true,
@@ -569,7 +571,6 @@ A detecção precoce permite intervenção **antes** da evolução para um quadr
           fullName:       'Roberto Alves Pereira',
           dateOfBirth:    new Date('1963-05-10'),
           gender:         'MALE',
-          cpf:            '456.789.123-00',
           phone:          '11 97600-3300',
           bloodType:      'B+',
           height:         172,
@@ -788,32 +789,17 @@ A detecção precoce permite intervenção **antes** da evolução para um quadr
   // ─── Metas iniciais e coins ───────────────────────────────
   console.log('  → metas iniciais e saldo de coins');
 
-  // João — caso grave, metas focadas em controle pressórico e glicemia
+  // Metas curadas a partir dos modelos com fonte (data/prevention.js),
+  // com progresso inventado só para a demo mostrar a barra andando.
+  const fromTemplate = (code, ctx, extra) => {
+    const t = goalTemplates.find((x) => x.code === code);
+    return { ...t.build(ctx), templateCode: t.code, sourceCode: t.sourceCode, source: 'triage', ...extra };
+  };
+
+  // João — caso grave: pressão, atividade física e a consulta já marcada
   const joaoGoals = [
-    {
-      title: 'Reduzir pressão sistólica',
-      description: 'Manter sistólica abaixo de 130 mmHg',
-      metric: 'systolic', targetCmp: 'lte', targetValue: 130,
-      rangeMax: 160, current: 146, progress: 30, coinsReward: 80, source: 'triage',
-    },
-    {
-      title: 'Controlar glicemia',
-      description: 'Glicemia em jejum abaixo de 130 mg/dL',
-      metric: 'glucose', targetCmp: 'lte', targetValue: 130,
-      rangeMax: 200, current: 184, progress: 23, coinsReward: 80, source: 'triage',
-    },
-    {
-      title: 'Caminhar 30 min/dia',
-      description: 'Atividade aeróbica leve, 5x por semana',
-      metric: 'steps', targetCmp: 'gte', targetValue: 7000,
-      rangeMin: 0, current: 3200, progress: 46, coinsReward: 50, source: 'triage',
-    },
-    {
-      title: 'Hidratação diária',
-      description: 'Pelo menos 2 litros de água por dia',
-      metric: 'custom', targetCmp: 'gte', targetValue: 7,
-      rangeMin: 0, current: 5, progress: 71, coinsReward: 30, source: 'triage',
-    },
+    fromTemplate('PA_NORMAL', { wearable: { systolicAvg: 160 } }, { current: 146, progress: 45 }),
+    fromTemplate('ATIVIDADE_150', {}, { current: 90, progress: 60 }),
   ];
   for (const g of joaoGoals) {
     await prisma.healthGoal.create({ data: { patientId: joaoId, ...g, status: 'ACTIVE' } });
@@ -821,40 +807,16 @@ A detecção precoce permite intervenção **antes** da evolução para um quadr
   // Uma meta já concluída pra mostrar progresso
   await prisma.healthGoal.create({ data: {
     patientId: joaoId,
-    title: 'Iniciar acompanhamento',
-    description: 'Primeira consulta + exames de rotina',
-    metric: 'custom', targetCmp: 'gte', targetValue: 1,
+    ...fromTemplate('CONSULTA', {}, { coinsReward: 40 }),
     current: 1, progress: 100,
-    status: 'DONE', coinsReward: 40, source: 'manual',
+    status: 'DONE',
     completedAt: new Date(Date.now() - 11 * DAY),
   }});
 
-  // Marina — preventivo, metas mais leves
+  // Marina — preventivo: atividade física e a consulta pedida pela triagem
   const marinaGoals = [
-    {
-      title: 'Estabilizar glicemia',
-      description: 'Glicemia média abaixo de 110 mg/dL',
-      metric: 'glucose', targetCmp: 'lte', targetValue: 110,
-      rangeMax: 130, current: 112, progress: 90, coinsReward: 60, source: 'triage',
-    },
-    {
-      title: 'Manter pressão saudável',
-      description: 'Sistólica abaixo de 125 mmHg',
-      metric: 'systolic', targetCmp: 'lte', targetValue: 125,
-      rangeMax: 140, current: 128, progress: 80, coinsReward: 60, source: 'triage',
-    },
-    {
-      title: 'Caminhar 30 min/dia',
-      description: 'Atividade aeróbica leve, 5x por semana',
-      metric: 'steps', targetCmp: 'gte', targetValue: 7000,
-      rangeMin: 0, current: 6200, progress: 88, coinsReward: 50, source: 'triage',
-    },
-    {
-      title: 'Dormir 7-9h por noite',
-      description: 'Higiene do sono e qualidade de descanso',
-      metric: 'custom', targetCmp: 'between',
-      rangeMin: 7, rangeMax: 9, current: 6.3, progress: 70, coinsReward: 40, source: 'triage',
-    },
+    fromTemplate('ATIVIDADE_150', {}, { current: 120, progress: 80 }),
+    fromTemplate('CONSULTA', {}, { current: 0, progress: 0 }),
   ];
   for (const g of marinaGoals) {
     await prisma.healthGoal.create({ data: { patientId: marinaId, ...g, status: 'ACTIVE' } });
@@ -876,7 +838,7 @@ A detecção precoce permite intervenção **antes** da evolução para um quadr
       createdAt: new Date(Date.now() - 12 * DAY) },
     { patientId: joaoId, delta: 20,  reason: 'Bônus: triagem concluída', refType: 'triage',
       createdAt: new Date(Date.now() - 5  * DAY) },
-    { patientId: joaoId, delta: 40,  reason: 'Meta concluída: Iniciar acompanhamento', refType: 'goal',
+    { patientId: joaoId, delta: 40,  reason: 'Meta concluída: Agendar consulta com seu médico', refType: 'goal',
       createdAt: new Date(Date.now() - 11 * DAY) },
     { patientId: joaoId, delta: 30,  reason: 'Dia de adesão completa ao monitoramento', refType: 'bonus',
       createdAt: new Date(Date.now() - 2  * DAY) },
@@ -927,10 +889,10 @@ A detecção precoce permite intervenção **antes** da evolução para um quadr
 
   console.log('✅ Seed concluído!');
   console.log('');
-  console.log('  👩‍⚕️ Médica:  doctor@healthinpulse.dev  / Doctor@123  (Dra. Ana Beatriz)');
-  console.log('  🧑 João:    joao@healthinpulse.dev    / Joao@123    (caso grave)');
-  console.log('  👩 Marina:  marina@healthinpulse.dev  / Marina@123  (preventivo)');
-  console.log('  👴 Roberto: roberto@healthinpulse.dev / Roberto@123 (colorretal)');
+  console.log('  👩‍⚕️ Médica:  ana     / Doctor@123  (Dra. Ana Beatriz)');
+  console.log('  🧑 João:    joao    / Joao@123    (caso grave)');
+  console.log('  👩 Marina:  marina  / Marina@123  (preventivo)');
+  console.log('  👴 Roberto: roberto / Roberto@123 (colorretal)');
 }
 
 main()

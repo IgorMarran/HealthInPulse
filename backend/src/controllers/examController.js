@@ -16,14 +16,14 @@ const upload = async (req, res, next) => {
 const list = async (req, res, next) => {
   try {
     const patient = await patientService.getProfile(req.user.id);
-    res.json(await examService.getExams(patient.id, req.query));
+    res.json(await examService.getExamsForPatient(patient.id, req.query));
   } catch (err) { next(err); }
 };
 
 const getOne = async (req, res, next) => {
   try {
     const patient = await patientService.getProfile(req.user.id);
-    res.json(await examService.getExamById(req.params.examId, patient.id));
+    res.json(await examService.getExamByIdForPatient(req.params.examId, patient.id));
   } catch (err) { next(err); }
 };
 

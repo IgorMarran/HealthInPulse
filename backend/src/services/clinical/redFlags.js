@@ -3,6 +3,11 @@
 // com prioridade absoluta sobre o algoritmo de entropia.
 //
 // Fonte: Documentação triagem HealthInPulse (Fase 3) + DSM-5 + AHA/SBC.
+// Limiares numéricos com fonte (regra R1; fichas em Docs/base-clinica-fisiologia.md):
+//   SpO₂ < 90%          OMS, manejo clínico (doença grave em ar ambiente)
+//   FC ≥ 150 bpm        AHA, algoritmo de taquicardia (ACLS 2025)
+//   glicemia > 250 mg/dL Ministério da Saúde, Caderno de Atenção Básica 36 (2013), p. 67
+// Nenhum alarme sai por falta de fonte: sem fonte, ele ganha uma.
 
 const { S } = require('./matrix');
 
@@ -43,7 +48,7 @@ const RED_FLAGS = [
     color:   'red',
     action:  'Pronto-socorro',
     rule:    ({ wearable }) =>
-      wearable?.restingHr != null && wearable.restingHr > 150,
+      wearable?.restingHr != null && wearable.restingHr >= 150,
   },
   {
     code:    'HIPERGLICEMIA',
@@ -52,7 +57,7 @@ const RED_FLAGS = [
     color:   'red',
     action:  'Pronto-socorro',
     rule:    ({ wearable }) =>
-      wearable?.glucose != null && wearable.glucose > 350,
+      wearable?.glucose != null && wearable.glucose > 250,
   },
   {
     code:    'IDEACAO_SUICIDA',

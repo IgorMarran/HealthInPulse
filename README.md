@@ -11,11 +11,13 @@ clínica de referência.
 A v8 acrescenta a **triagem de risco de câncer** (colorretal, pulmão, mama,
 próstata e colo do útero), com IA parametrizada por banco de dados: os números
 do motor vivem em tabelas, cada um com fonte, e a médica os edita na tela
-**Base da IA**. É triagem de risco, **não diagnóstico**: o resultado traz a
-categoria (ROTINA, ATENÇÃO ou INVESTIGAR), o porquê fator a fator e o exame de
-rastreamento indicado pelas diretrizes brasileiras. Foi montada para o stand da
-feira da faculdade (24/10/2026), onde o visitante faz o **teste rápido em
-`/teste`**, sem login e sem gravar nada. Veja [Feira (stand)](#feira-stand).
+**Base da IA**. É triagem de risco, **não diagnóstico**, e só a médica a vê: o
+resultado dela traz a categoria (ROTINA, ATENÇÃO ou INVESTIGAR), o porquê fator a
+fator e o exame de rastreamento indicado pelas diretrizes brasileiras. O paciente
+e o visitante **nunca veem doença**: recebem o próximo passo, a comparação com o
+padrão normal, os exames preventivos da idade e metas com fonte. Foi montada para
+o stand da feira da faculdade (24/10/2026), onde o visitante faz o **teste rápido
+em `/teste`**, sem login e sem gravar nada. Veja [Feira (stand)](#feira-stand).
 
 > Aplicação **demo/acadêmica**. Não usar com dados reais de pacientes.
 
@@ -28,7 +30,7 @@ feira da faculdade (24/10/2026), onde o visitante faz o **teste rápido em
 | Backend      | Node 20 · Express 4 · Prisma 5 · SQLite · Socket.io · JWT  |
 | Frontend     | React 18 · Vite 5 · Tailwind 3 · React Router 6 · Recharts |
 | IA           | OpenAI GPT-4o (opcional) · fallback local (`aiSimulator`)  |
-| Motor clínico| Bayes explicável · base de conhecimento no SQLite (13 condições) |
+| Motor clínico| Bayes explicável (5 cânceres) + 3 escores validados (STOP-Bang, FINDRISC, PHQ-9) · base com fonte no SQLite |
 | Auth         | JWT access + refresh com rotação                           |
 
 ---
@@ -138,9 +140,9 @@ este repositório e **Apply**. O Render pede dois valores:
   real, cada relatório gerado no link gasta a sua conta da OpenAI.
 
 O `render.yaml` fixa `KB_EDIT=false`: no Render a Base da IA é **só leitura**.
-Não troque para `true`: o cadastro de médica é aberto e as senhas da demo são
-públicas, então qualquer visitante poderia alterar a IA. A edição da demo
-acontece no notebook do stand (`npm run stand`).
+Não troque para `true`: as senhas da demo são públicas (estão no seed e no slide
+da feira), então qualquer visitante poderia entrar como a médica e alterar a IA.
+A edição da demo acontece no notebook do stand (`npm run stand`).
 
 Depois disso, cada push na `main` faz deploy sozinho. Para trocar a senha da
 turma: painel do Render → serviço → **Environment**. No plano grátis:
@@ -158,16 +160,25 @@ Para conferir o deploy: `npm run smoke -- --url=https://SEU-APP.onrender.com --d
 
 ## Credenciais demo
 
-A tela de login tem **4 cards "Demo · clique para entrar"** (Roberto, João,
-Marina e a Dra. Ana) que logam diretamente, e um link para o teste rápido.
-Ou digite manualmente:
+A tela de login abre **vazia**, sem atalhos de demonstração, com o link para o
+teste rápido e o **Cadastre-se**. Digite **usuário** e **senha**: o login é por
+usuário, não por e-mail. As senhas da demo ficam no slide "Logins da demo" de
+[`Docs/feira/slides.pptx`](./Docs/feira/slides.pptx) (gerado por
+`Docs/feira/gerador-slides.cjs`), não no site.
 
-| Perfil                        | E-mail                          | Senha         | Tipo                                       |
-|------------------------------|---------------------------------|---------------|--------------------------------------------|
-| 🧓 **Roberto Alves Pereira**  | `roberto@healthinpulse.dev`     | `Roberto@123` | Paciente · 63 anos, colorretal a **investigar** (FIT+, anemia, perda de peso na balança) |
-| ✨ **Marina Azevedo Lima**    | `marina@healthinpulse.dev`      | `Marina@123`  | Paciente · 34 anos, preventivo (pré-diabetes; mama em **atenção** pela história familiar) |
-| 🩺 **João Carlos Mendes**     | `joao@healthinpulse.dev`        | `Joao@123`    | Paciente · 58 anos, caso grave crônico (HAS + DM2); câncer em rotina |
-| 🧑‍⚕️ **Dra. Ana Beatriz Souza** | `doctor@healthinpulse.dev`      | `Doctor@123`  | Médica · vinculada aos 3 pacientes acima   |
+| Perfil                        | Usuário   | Tipo                                       |
+|------------------------------|-----------|--------------------------------------------|
+| 🧓 **Roberto Alves Pereira**  | `roberto` | Paciente · 63 anos, colorretal a **investigar** (FIT+, anemia, perda de peso na balança) |
+| ✨ **Marina Azevedo Lima**    | `marina`  | Paciente · 34 anos, mama em **atenção** pela história familiar; escores crônicos baixos |
+| 🩺 **João Carlos Mendes**     | `joao`    | Paciente · 58 anos, escores altos (STOP-Bang 6, FINDRISC 23), risco HIGH; câncer em rotina |
+| 🧑‍⚕️ **Dra. Ana Beatriz Souza** | `ana`     | Médica · vinculada aos pacientes           |
+
+As categorias da tabela são o que a **médica** vê; no app de cada paciente
+aparecem só o próximo passo, o padrão normal, os exames preventivos e as metas.
+
+**Cadastro:** só paciente se cadastra, com usuário, nome e senha (sem e-mail,
+CPF ou data de nascimento). A conta entra direto na triagem, mostra o tutorial
+das abas e fica ligada à médica. A médica não se cadastra: usa a conta `ana`.
 
 O seed faz as triagens dos três pelo motor de verdade e **falha alto** se a
 história mudar (por exemplo, uma revisão de número da base que tire o Roberto
@@ -222,9 +233,13 @@ regera o `banner.pdf`; precisa de Chrome, Chromium ou Edge).
 O `npm run qr -- URL --pdf` troca os três de uma vez; depois confira com `git diff`, rode `npm run build` e aponte a
 câmera para o QR da tela e do PDF.
 
-**Teste rápido (`/teste`).** Página pública: perfil, até 8 perguntas, resultado
-com categoria, "vezes a média da sua idade", frequência natural e rastreamento
-indicado. Nada é gravado e o corpo da requisição não vai para o log. Com
+**Teste rápido (`/teste`).** Página pública: perfil, até 8 perguntas e um
+resultado de prevenção, sem nenhuma doença: o próximo passo (manter a rotina,
+agendar consulta ou procurar atendimento agora, com SAMU 192 ou CVV 188 quando
+couber), os exames preventivos da idade e do sexo, pelo nome, e hábitos com
+fonte (atividade física, álcool, fumo e o peso em relação à faixa normal do
+IMC). Não mostra card por câncer, categoria de risco nem porcentagem: o risco é
+da tela da médica. Nada é gravado e o corpo da requisição não vai para o log. Com
 `/teste?kiosk=1` o modo quiosque volta à capa sozinho após 120 s parado. Na capa
 há "Demonstração da equipe", com personas que preenchem tudo para a equipe
 mostrar um resultado sem digitar.

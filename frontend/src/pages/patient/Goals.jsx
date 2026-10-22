@@ -48,6 +48,9 @@ function GoalCard({ goal, onProgress, justCompleted }) {
           {goal.description && (
             <p className="text-xs text-surface-500 mt-1">{goal.description}</p>
           )}
+          {goal.sourceLabel && (
+            <p className="text-[11px] text-surface-400 mt-0.5">Fonte: {goal.sourceLabel}</p>
+          )}
         </div>
         <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-full">
           <Coins size={11} /> {goal.coinsReward}

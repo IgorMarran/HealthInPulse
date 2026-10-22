@@ -1,44 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import { Eye, EyeOff, Heart, Activity, Sparkles, Stethoscope, Microscope, ClipboardCheck } from 'lucide-react';
+import { useAuth, homeFor } from '@/contexts/AuthContext';
+import { Eye, EyeOff, Heart, ClipboardCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
-
-// Personas da feira (seed): Roberto (câncer colorretal), Marina, João e a médica
-const DEMO_USERS = [
-  {
-    id: 'roberto',
-    label: 'Roberto Pereira',
-    sub:   'paciente · 63 anos, caso de câncer colorretal',
-    icon:  Microscope,
-    email: 'roberto@healthinpulse.dev',
-    pass:  'Roberto@123',
-  },
-  {
-    id: 'joao',
-    label: 'João Mendes',
-    sub:   'paciente · caso grave',
-    icon:  Activity,
-    email: 'joao@healthinpulse.dev',
-    pass:  'Joao@123',
-  },
-  {
-    id: 'marina',
-    label: 'Marina Lima',
-    sub:   'paciente · preventivo',
-    icon:  Sparkles,
-    email: 'marina@healthinpulse.dev',
-    pass:  'Marina@123',
-  },
-  {
-    id: 'ana',
-    label: 'Dra. Ana Beatriz',
-    sub:   'médica',
-    icon:  Stethoscope,
-    email: 'doctor@healthinpulse.dev',
-    pass:  'Doctor@123',
-  },
-];
+import { apiError } from '@/services/api';
 
 export default function LoginPage() {
   const { login }  = useAuth();
@@ -46,34 +11,29 @@ export default function LoginPage() {
   const location   = useLocation();
   const from       = location.state?.from?.pathname || null;
 
-  const [form, setForm]     = useState({
-    email:    DEMO_USERS[0].email,
-    password: DEMO_USERS[0].pass,
-  });
-  const [show, setShow]     = useState(false);
+  // Abre vazio: nenhum login é sugerido pelo app
+  const [form, setForm]       = useState({ username: '', password: '' });
+  const [show, setShow]       = useState(false);
   const [loading, setLoading] = useState(false);
+  const passwordRef           = useRef(null);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const doLogin = async (email, password) => {
-    if (!email || !password) return toast.error('Preencha todos os campos');
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.username || !form.password) return toast.error('Preencha usuário e senha');
     setLoading(true);
     try {
-      const user = await login(email, password);
-      const dest = from || (user.role === 'DOCTOR' ? '/doctor' : '/patient');
-      navigate(dest, { replace: true });
+      const user = await login(form.username, form.password);
+      navigate(from || homeFor(user), { replace: true });
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Credenciais inválidas');
+      toast.error(apiError(err, 'Usuário ou senha inválidos'));
+      // Mantém o usuário digitado; limpa só a senha e volta o foco para ela
+      setForm((f) => ({ ...f, password: '' }));
+      passwordRef.current?.focus();
     } finally {
       setLoading(false);
     }
-  };
-
-  const submit = (e) => { e.preventDefault(); doLogin(form.email, form.password); };
-
-  const loginAs = (u) => {
-    setForm({ email: u.email, password: u.pass });
-    doLogin(u.email, u.pass);
   };
 
   return (
@@ -98,26 +58,29 @@ export default function LoginPage() {
         {/* Card */}
         <div className="glass p-6">
           <h2 className="font-display text-lg font-semibold mb-5">Entrar</h2>
-          <form onSubmit={submit} className="space-y-4">
+          <form onSubmit={submit} className="space-y-4" autoComplete="off">
             <div>
-              <label className="label">E-mail</label>
+              <label className="label" htmlFor="login-username">Usuário</label>
               <input
-                type="email" value={form.email} onChange={set('email')}
-                className="input" placeholder="seu@email.com"
-                autoComplete="email" autoFocus
+                id="login-username" name="hip-username"
+                value={form.username} onChange={set('username')}
+                className="input" placeholder="seu usuário"
+                autoComplete="off" autoCapitalize="none" spellCheck={false}
               />
             </div>
             <div>
-              <label className="label">Senha</label>
+              <label className="label" htmlFor="login-password">Senha</label>
               <div className="relative">
                 <input
+                  id="login-password" name="hip-password" ref={passwordRef}
                   type={show ? 'text' : 'password'} value={form.password} onChange={set('password')}
                   className="input pr-10" placeholder="••••••••"
-                  autoComplete="current-password"
+                  autoComplete="off"
                 />
                 <button
                   type="button" onClick={() => setShow(!show)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-500"
+                  aria-label={show ? 'Esconder senha' : 'Mostrar senha'}
                 >
                   {show ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
@@ -127,33 +90,6 @@ export default function LoginPage() {
               {loading ? 'Entrando…' : 'Entrar'}
             </button>
           </form>
-
-          {/* Demo selector — clique entra direto */}
-          <div className="mt-6 pt-5 border-t border-surface-200">
-            <p className="text-[10px] uppercase tracking-widest text-surface-400 font-semibold mb-3">
-              Demo · clique para entrar
-            </p>
-            <div className="grid gap-2">
-              {DEMO_USERS.map((u) => (
-                <button
-                  type="button"
-                  key={u.id}
-                  onClick={() => loginAs(u)}
-                  disabled={loading}
-                  className="w-full text-left p-3 rounded-xl border border-surface-200 hover:border-brand-300 hover:bg-brand-50/40 transition-all flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group"
-                >
-                  <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-surface-100 text-surface-500 group-hover:bg-brand-100 group-hover:text-brand-700 transition-colors">
-                    <u.icon size={16} />
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-medium text-surface-800">{u.label}</span>
-                    <span className="block text-[11px] text-surface-500">{u.sub}</span>
-                  </span>
-                  <span className="text-surface-300 group-hover:text-brand-600 transition-colors">→</span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* Teste rápido do stand: público, sem login */}
@@ -165,7 +101,7 @@ export default function LoginPage() {
             <ClipboardCheck size={16} />
           </span>
           <span className="flex-1 min-w-0">
-            <span className="block text-sm font-medium text-surface-800">Teste rápido de risco</span>
+            <span className="block text-sm font-medium text-surface-800">Teste rápido de prevenção</span>
             <span className="block text-[11px] text-surface-500">2 a 3 minutos, sem login, nada é gravado</span>
           </span>
           <span className="text-surface-300 group-hover:text-brand-600 transition-colors">→</span>

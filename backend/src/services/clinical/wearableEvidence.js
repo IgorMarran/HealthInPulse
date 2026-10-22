@@ -96,66 +96,14 @@ const collectFromDatabase = async (patientId) => {
   };
 };
 
-// Converte os números acima em evidência bayesiana ponderada.
-// O "weight" reflete o quanto a evidência objetiva domina o produto:
-// um IAH ≥ 15 entra como se o paciente tivesse confirmado 3 sintomas
-// pesados de AOS.
-const toBayesianEvidence = (w = {}) => {
-  const ev = {};
-  if (!w || !w.hasData) return ev;
-
-  // ─── AOS — IAH e SpO₂ noturna são quase patognomônicos
-  if (w.ahi != null) {
-    if (w.ahi >= 15)      ev[S.APNEIA_OBSERVADA] = { value: 1, weight: 3 };
-    else if (w.ahi >= 5)  ev[S.APNEIA_OBSERVADA] = { value: 1, weight: 2 };
-  }
-  if (w.nocturnalSpO2 != null && w.nocturnalSpO2 < 90) {
-    ev[S.APNEIA_OBSERVADA] = { value: 1, weight: 3 };
-    ev[S.RONCO_ALTO]       = { value: 1, weight: 1 };
-  }
-  if (w.sleepHours != null && w.sleepHours < 5) {
-    ev[S.FADIGA_DIURNA] = { value: 1, weight: 1 };
-  }
-
-  // ─── Cardiovascular — PA + FC repouso
-  if (w.systolicAvg != null && w.systolicAvg >= 140) {
-    ev[S.HAS_CONHECIDA] = { value: 1, weight: 2 };
-  } else if (w.systolic != null && w.systolic >= 140) {
-    ev[S.HAS_CONHECIDA] = { value: 1, weight: 1 };
-  }
-  if (w.restingHrAvg != null && w.restingHrAvg > 100) {
-    ev[S.PALPITACOES] = { value: 1, weight: 1 };
-  }
-
-  // ─── Arritmia — irregularidade + paroxismos
-  if (w.fcIrregular) {
-    ev[S.PALP_PAROXISTICAS] = { value: 1, weight: 2 };
-    ev[S.PALPITACOES]       = { value: 1, weight: 2 };
-  }
-  if (w.paroxysmalTach != null && w.paroxysmalTach > 0) {
-    ev[S.PALP_PAROXISTICAS] = { value: 1, weight: 3 };
-  }
-  if (w.hrv != null && w.hrv < 20) {
-    // HRV cronicamente baixa — disfunção autonômica
-    ev[S.FADIGA_DIURNA] = { value: 1, weight: 1 };
-  }
-
-  // ─── DPOC — SpO₂ em repouso
-  if (w.restingSpO2 != null && w.restingSpO2 < 95) {
-    ev[S.DISPNEIA_ESFORCO] = { value: 1, weight: 1 };
-  }
-  if (w.restingSpO2 != null && w.restingSpO2 < 92) {
-    ev[S.DISPNEIA_REPOUSO] = { value: 1, weight: 2 };
-  }
-
-  // ─── DM2 — Glicemia
-  if (w.glucose != null && w.glucose >= 200) {
-    ev[S.POLIURIA]   = { value: 1, weight: 2 };
-    ev[S.POLIDIPSIA] = { value: 1, weight: 2 };
-  }
-
-  return ev;
-};
+// Converte os números da pulseira em evidência bayesiana.
+// Desligado (regra R1, auditoria de 22/10/2026): nenhuma das conversões
+// tinha fonte. IAH, SpO₂ noturna, sono, PA, FC, HRV e glicemia viravam
+// "sintomas" (apneia observada, palpitação, poliúria...) com pesos 1/2/3
+// inventados. Os números da pulseira continuam valendo como sinal contra a
+// faixa normal (patientView) e nos alarmes (redFlags). A tendência de peso
+// da balança (abaixo) tem fonte (GLIM 2019) e continua.
+const toBayesianEvidence = () => ({});
 
 // Texto humano para mostrar ao paciente: "sua pulseira detectou ..."
 const summarizeForPatient = (w = {}) => {

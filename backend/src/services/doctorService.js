@@ -6,7 +6,7 @@ const { parsePatient, parseJson } = require('../utils/jsonField');
 const getProfile = async (userId) => {
   const doctor = await prisma.doctor.findUnique({
     where: { userId },
-    include: { user: { select: { email: true, createdAt: true } } },
+    include: { user: { select: { username: true, email: true, createdAt: true } } },
   });
   if (!doctor) throw Object.assign(new Error('Médico não encontrado'), { status: 404 });
   return doctor;
@@ -43,7 +43,7 @@ const getPatients = async (doctorId, { page = 1, limit = 20, search } = {}) => {
             // Sem mode:'insensitive': o SQLite não suporta (dava 500). O LIKE
             // do SQLite já ignora maiúsculas/minúsculas em letras ASCII.
             { fullName: { contains: search } },
-            { cpf:      { contains: search } },
+            { user:     { username: { contains: search } } },
           ],
         }
       : {}),
@@ -80,7 +80,7 @@ const getPatientDetail = async (doctorId, patientId) => {
   const patient = await prisma.patient.findUnique({
     where: { id: patientId },
     include: {
-      user:       { select: { email: true } },
+      user:       { select: { username: true, email: true } },
       vitalSigns: { orderBy: { recordedAt: 'desc' }, take: 10 },
       exams:      { orderBy: { uploadedAt: 'desc'  }, take: 5, include: { examResult: true } },
       aiReports:  { orderBy: { generatedAt: 'desc' }, take: 5 },
@@ -263,7 +263,7 @@ const getPatientConsolidated = async (doctorId, patientId) => {
   const [patient, latestVital, vitalsTrend, exams, aiReports, goals, lastTriage] = await Promise.all([
     prisma.patient.findUnique({
       where: { id: patientId },
-      include: { user: { select: { email: true } } },
+      include: { user: { select: { username: true, email: true } } },
     }),
     prisma.vitalSign.findFirst({ where: { patientId }, orderBy: { recordedAt: 'desc' } }),
     prisma.vitalSign.findMany({

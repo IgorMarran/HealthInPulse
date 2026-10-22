@@ -1148,9 +1148,9 @@
       {"id":8,"answers":{},"wearable":{"restingSpO2":89},"expected":{"code":"INSUF_RESP","label":"Insuficiência respiratória","urgency":"EMERGENCY","color":"red","action":"UPA / Pronto-socorro"}},
       {"id":9,"answers":{},"wearable":{"restingSpO2":90},"expected":null},
       {"id":10,"answers":{},"wearable":{"restingHr":151},"expected":{"code":"TAQUI_GRAVE","label":"Taquiarritmia grave","urgency":"EMERGENCY","color":"red","action":"Pronto-socorro"}},
-      {"id":11,"answers":{},"wearable":{"restingHr":150},"expected":null},
+      {"id":11,"answers":{},"wearable":{"restingHr":150},"expected":{"code":"TAQUI_GRAVE","label":"Taquiarritmia grave","urgency":"EMERGENCY","color":"red","action":"Pronto-socorro"}},
       {"id":12,"answers":{},"wearable":{"glucose":351},"expected":{"code":"HIPERGLICEMIA","label":"Crise hiperglicêmica","urgency":"EMERGENCY","color":"red","action":"Pronto-socorro"}},
-      {"id":13,"answers":{},"wearable":{"glucose":350},"expected":null},
+      {"id":13,"answers":{},"wearable":{"glucose":350},"expected":{"code":"HIPERGLICEMIA","label":"Crise hiperglicêmica","urgency":"EMERGENCY","color":"red","action":"Pronto-socorro"}},
       {"id":14,"answers":{"phq9_ideacao_morte":0},"wearable":null,"expected":null},
       {"id":15,"answers":{"phq9_ideacao_morte":1},"wearable":null,"expected":{"code":"IDEACAO_SUICIDA","label":"Ideação suicida (PHQ-9 item 9)","urgency":"EMERGENCY","color":"red","action":"CVV 188 / Suporte psiquiátrico imediato"}},
       {"id":16,"answers":{"phq9_ideacao_morte":"0"},"wearable":null,"expected":null},
@@ -1171,7 +1171,7 @@
       {"id":31,"answers":{"sudorese_noturna":"1"},"wearable":null,"expected":null},
       {"id":32,"answers":{"irradiacao_braco_mandibula":0,"sincope":1},"wearable":{"restingSpO2":98},"expected":null},
       {"id":33,"answers":{"perda_peso_inexplicada":"1","sudorese_noturna":"sim"},"wearable":null,"expected":{"code":"NEOPLASIA","label":"Suspeita de neoplasia / TB","urgency":"URGENT","color":"orange","action":"Investigação imediata"}},
-      {"id":34,"answers":{"irradiacao_braco_mandibula":"1","cefaleia_pior_da_vida":"Não","sincope":"sim"},"wearable":{"glucose":326},"expected":null},
+      {"id":34,"answers":{"irradiacao_braco_mandibula":"1","cefaleia_pior_da_vida":"Não","sincope":"sim"},"wearable":{"glucose":326},"expected":{"code":"HIPERGLICEMIA","label":"Crise hiperglicêmica","urgency":"EMERGENCY","color":"red","action":"Pronto-socorro"}},
       {"id":35,"answers":{"irradiacao_braco_mandibula":"1","sudorese_fria":"1","sincope":"Não","sincope_durante_esforco":"1"},"wearable":null,"expected":null},
       {"id":36,"answers":{"deficit_neurologico_subito":"Sim","sincope":"1","sudorese_noturna":"Não"},"wearable":null,"expected":{"code":"AVC","label":"Suspeita de AVC / Hemorragia Subaracnoide","urgency":"EMERGENCY","color":"red","action":"SAMU (192) imediato"}},
       {"id":37,"answers":{"dor_toracica_tipica":null,"deficit_neurologico_subito":"1","sincope":false},"wearable":{"restingSpO2":86},"expected":{"code":"AVC","label":"Suspeita de AVC / Hemorragia Subaracnoide","urgency":"EMERGENCY","color":"red","action":"SAMU (192) imediato"}},
@@ -1203,6 +1203,7 @@
       {"id":63,"answers":{"deficit_neurologico_subito":2,"cefaleia_pior_da_vida":2,"perda_peso_inexplicada":0},"wearable":null,"expected":null},
       {"id":64,"answers":{"sudorese_fria":2,"sincope":0},"wearable":{"restingSpO2":91},"expected":null},
       {"id":65,"answers":{"deficit_neurologico_subito":null},"wearable":null,"expected":null}
-    ]
+    ],
+    "_nota": "22/10/2026: casos 11, 13 e 34 mudaram de propósito (regra R1). FC >= 150 (AHA) e glicemia > 250 (MS, CAB 36) no lugar de > 150 e > 350, que não tinham fonte."
   }
 }

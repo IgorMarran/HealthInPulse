@@ -82,7 +82,8 @@ Peças do motor (`backend/src/services/clinical/`):
 
 | Módulo               | O que faz                                                                   |
 |----------------------|-----------------------------------------------------------------------------|
-| `bayes.js`           | `createEngine(kb, {categories})`: prior, posterior, ganho de informação. A fase crônica da v7 saiu daqui idêntica (golden test) |
+| `bayes.js`           | `createEngine(kb, {categories})`: prior, posterior, ganho de informação. Usado nos cânceres; a fase crônica da v7 saiu da triagem em 22/10/2026 (sem fonte) e fica só no golden test |
+| `chronicScores.js`   | fase crônica por escores validados: STOP-Bang, FINDRISC (SBD 2025), PHQ-2 → PHQ-9, com os cortes oficiais e sem porcentagem |
 | `riskEngine.js`      | `assess`: risco de cada condição com o "por quê" fator a fator, risco relativo à média da idade e sexo, categoria ROTINA/ATENÇÃO/INVESTIGAR |
 | `questionRunner.js`  | escolhe a próxima pergunta dos cânceres (`Σ|ln LR+|/custo`, só os elegíveis por idade e sexo); a entropia global ignoraria P≈0,2% |
 | `labEvidence.js`     | exames (`ExamResult.findings`) → evidência, conforme as `LabRule`           |
@@ -90,6 +91,12 @@ Peças do motor (`backend/src/services/clinical/`):
 | `screening.js`       | `ScreeningRule` → o que fazer agora, discutir com o médico ou no futuro      |
 | `redFlags.js`        | sinais de alarme, **em código** (a Base da IA só os lista)                   |
 | `profile.js`         | `ageFromDob`, `mapGender`, `computeBmi`, `normalizeProfile`                 |
+| `data/prevention.js` | faixas normais e modelos de meta, cada um com fonte (Guyton & Hall, SBC 2025, OMS, MS, INCA) |
+
+**O que o paciente vê** (regra R2) passa por `services/patientView.js`: toda rota
+e evento do paciente e o `/teste` recebem só o próximo passo (ROTINA, CONSULTA,
+AGORA), os sinais da pulseira contra a faixa normal, os exames preventivos e as
+metas. Nome, código e probabilidade de doença ficam nas rotas da médica.
 
 Classificação oncológica própria: **INVESTIGAR** se P ≥ 3% (limiar do NICE
 NG12), **ATENÇÃO** se P ≥ 1% ou risco relativo ≥ 2, senão **ROTINA**. No banco e
@@ -215,8 +222,8 @@ main.jsx
 ```
 src/pages/
 ├── auth/
-│   ├── LoginPage.jsx        ← 4 cards demo (Roberto, João, Marina, Dra. Ana) + link do /teste
-│   └── RegisterPage.jsx     ← cadastro role-aware (paciente/médico)
+│   ├── LoginPage.jsx        ← usuário e senha (abre vazio, sem cards) + link do /teste
+│   └── RegisterPage.jsx     ← cadastro só de paciente: usuário, nome e senha
 ├── patient/
 │   ├── Dashboard.jsx        ← hero + score animado + 5 vitais + gráficos 30d
 │   ├── Goals.jsx            ← metas com barras de progresso + confetti
@@ -539,6 +546,9 @@ de página, modais e cards "ao vivo".
 | Como a triagem decide e fecha           | `services/triageService.js::advance` e `finalize`          |
 | O risco de câncer e o "por quê"         | `services/clinical/riskEngine.js::assess`                  |
 | O teste público do stand                | `services/quickTestService.js` + `routes/publicRoutes.js`  |
+| O que o paciente vê (sem doença)        | `services/patientView.js` + `components/prevention/PreventionView.jsx` |
+| Faixas normais e metas com fonte        | `services/clinical/data/prevention.js` + `Docs/base-clinica-fisiologia.md` |
+| Primeiro acesso e tutorial              | `contexts/AuthContext.jsx::homeFor` + `components/onboarding/Tutorial.jsx` |
 | A base de conhecimento                  | `services/clinical/kb/kbRepository.js` + `prisma/seedKnowledge.js` |
 | A edição da Base da IA                  | `services/knowledgeService.js` + `pages/doctor/Knowledge.jsx` |
 | Os números dos cânceres                 | `services/clinical/data/oncology.js` + `Docs/base-clinica-oncologia.md` |

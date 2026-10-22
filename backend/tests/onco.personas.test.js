@@ -70,7 +70,7 @@ test('Roberto: colorretal INVESTIGAR, com exame, balança e resposta no "por qu�
 
   // pulmão: ex-fumante pesado com perda de peso medida → pelo menos atenção
   atLeast(o.CA_PULMAO, 'ATENÇÃO');
-  assert.ok(o.CA_PULMAO.factors.some(f => /maços-ano/.test(f.label)));
+  assert.ok(o.CA_PULMAO.factors.some(f => f.label === 'Ex-fumante'));
   // sem câncer de mulher para ele
   assert.ok(!o.CA_MAMA && !o.CA_COLO_UTERO);
 
@@ -269,4 +269,16 @@ test('questionRunner: maior Σ|ln LR+|/custo primeiro; empate pelo sortOrder', (
     && kb.conditionSymptoms.some(c => c.symptomCode === s.code && c.conditionCode === 'CA_COLORRETAL'))
     .sort((a, b) => a.sortOrder - b.sortOrder);
   assert.equal(first.symptom, ccrQuestions[0].code);
+});
+
+test('pele da mama: regra direta do NICE NG12 sobe para ATENÇÃO, sem LR', () => {
+  const kbAll = require('../src/services/clinical/kb/buildFromSeed').buildFromSeed();
+  const riskEngine = require('../src/services/clinical/riskEngine');
+  const profile = { age: 45, sex: 'female', height: 165, weight: 62 };
+  const sem = riskEngine.assess(kbAll, { profile, answers: {} }).oncology.find(c => c.code === 'CA_MAMA');
+  const com = riskEngine.assess(kbAll, { profile, answers: { alteracao_pele_mama: true } }).oncology.find(c => c.code === 'CA_MAMA');
+  assert.equal(sem.level, 'ROTINA');
+  assert.equal(com.level, 'ATENÇÃO');
+  assert.equal(com.posterior, sem.posterior, 'a regra não mexe no número');
+  assert.match(com.directRule.source.citation, /NICE/);
 });

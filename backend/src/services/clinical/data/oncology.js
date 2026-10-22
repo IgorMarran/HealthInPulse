@@ -99,10 +99,18 @@ const sources = [
     citation: 'Shapley M, Jordan J, Croft PR. A systematic review of postcoital bleeding and risk of cervical cancer. Br J Gen Pract 2006;56(527):453–60.',
     url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC1839021/',
     note: 'Sangramento pós-coito em 11% dos casos de câncer do colo; incidência anual na comunidade 3,4–12,6%.' },
-  { code: 'HIP_ESTIMATIVA_ONCO', year: 2026,
-    citation: 'Estimativa da equipe HealthInPulse, sem estudo primário localizado; ordem de grandeza ancorada em Shapley 2006.',
-    url: null,
-    note: 'Usada só onde a pesquisa não achou número publicado. Confiança C: revisar com a médica.' },
+  { code: 'QCANCER_F_2013', year: 2013,
+    citation: 'Hippisley-Cox J, Coupland C. Symptoms and risk factors to identify women with suspected cancer in primary care: derivation and validation of an algorithm. Br J Gen Pract 2013;63(606):e11–e21. DOI 10.3399/bjgp13X660733.',
+    url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC3529288/',
+    note: 'Coorte QResearch, mulheres de 25 a 89 anos, câncer em 2 anos. Sangramento entre menstruações: risco ~7 vezes maior; pós-menopausa ~29; pós-coito ~23.' },
+  { code: 'CAMPOS_RSP_2024', year: 2024,
+    citation: 'Campos MR, Rodrigues JM, Marques AP, et al. Smoking, mortality, access to diagnosis, and treatment of lung cancer in Brazil. Rev Saúde Pública 2024;58:18. DOI 10.11606/s1518-8787.2024058005704.',
+    url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC11090611/',
+    note: 'PNS 2019 (adultos): fumantes 12,7%, ex 27,1%, nunca 60,2%. RHC/INCA 2019 (câncer de pulmão, n = 9.523): fumantes 39,1%, ex 41,1%, nunca 19,8%. Fator = fração nos casos ÷ fração na população.' },
+  { code: 'ZHENG_SCIREP_2018', year: 2018,
+    citation: 'Zheng G, Yu H, Kanerva A, Försti A, Sundquist K, Hemminki K. Familial ovarian cancer clusters with other cancers. Sci Rep 2018;8:11561. DOI 10.1038/s41598-018-29888-4.',
+    url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC6070489/',
+    note: 'Registro nacional sueco. Mama com 1 parente de 1º grau com câncer de ovário: RR 1,24 (1,19–1,30); 2 ou mais: RR 2,13.' },
 
   // Exames
   { code: 'LEE_FIT_2014', year: 2014,
@@ -344,22 +352,19 @@ const riskFactorRules = [
 
   // ── Pulmão (fatores relativos à MÉDIA da população, que mistura
   //    fumantes e não fumantes; ver o .md). Nunca fumou → abaixo da média.
-  factor('CA_PULMAO', 'Nunca fumou', [NEVER_SMOKED], 0.27, false, 'CONSENSO_PULMAO_BR_2024'),
-  factor('CA_PULMAO', 'Fumo: menos de 10 maços-ano', [SMOKER, ...range('packYears', 0, 10)], 1.1, true, 'GANDINI_2008'),
-  factor('CA_PULMAO', 'Fumo: 10 a 19 maços-ano', [SMOKER, ...range('packYears', 10, 20)], 2.2, true, 'GANDINI_2008'),
-  factor('CA_PULMAO', 'Fumo: 20 a 39 maços-ano', [SMOKER, ...range('packYears', 20, 40)], 3.8, true, 'TINDLE_2018'),
-  factor('CA_PULMAO', 'Fumo: 40 maços-ano ou mais', [SMOKER, ...range('packYears', 40, null)], 5.4, true, 'TINDLE_2018'),
-  factor('CA_PULMAO', 'Parou de fumar há 1 a 4 anos', [SMOKER, ...range('quitYears', 1, 5)], 0.61, true, 'TINDLE_2018'),
-  factor('CA_PULMAO', 'Parou de fumar há 5 a 9 anos', [SMOKER, ...range('quitYears', 5, 10)], 0.59, true, 'TINDLE_2018'),
-  factor('CA_PULMAO', 'Parou de fumar há 10 a 14 anos', [SMOKER, ...range('quitYears', 10, 15)], 0.39, true, 'TINDLE_2018'),
-  factor('CA_PULMAO', 'Parou de fumar há 15 a 24 anos', [SMOKER, ...range('quitYears', 15, 25)], 0.30, true, 'TINDLE_2018'),
-  factor('CA_PULMAO', 'Parou de fumar há 25 anos ou mais', [SMOKER, ...range('quitYears', 25, null)], 0.19, true, 'TINDLE_2018'),
+  // Fatores do fumo com dados brasileiros (RHC/INCA × PNS 2019, Campos 2024):
+  // fração dos casos ÷ fração da população. A média ponderada dá 1,00.
+  // As faixas de maços-ano e de anos sem fumar saíram (a de "nunca fumou"
+  // usava um valor assumido); quitYears segue valendo no rastreamento.
+  factor('CA_PULMAO', 'Nunca fumou', [NEVER_SMOKED], 0.33, false, 'CAMPOS_RSP_2024'),
+  factor('CA_PULMAO', 'Fuma atualmente', [SMOKER, ...range('quitYears', 0, 1)], 3.08, true, 'CAMPOS_RSP_2024'),
+  factor('CA_PULMAO', 'Ex-fumante', [SMOKER, ...range('quitYears', 1, null)], 1.52, true, 'CAMPOS_RSP_2024'),
   factor('CA_PULMAO', 'Parente de 1º grau com câncer de pulmão', [FAMILY('pulmao')], 1.5, false, 'MATAKIDOU_2005'),
 
   // ── Mama
   factor('CA_MAMA', 'Mãe, irmã ou filha com câncer de mama (você com menos de 50 anos)', [FAMILY('mama'), AGE_LT(50)], 2.2, false, 'COLLAB_FAMILIAL_2001'),
   factor('CA_MAMA', 'Mãe, irmã ou filha com câncer de mama (você com 50 anos ou mais)', [FAMILY('mama'), AGE_GTE(50)], 1.7, false, 'COLLAB_FAMILIAL_2001'),
-  factor('CA_MAMA', 'Parente de 1º grau com câncer de ovário', [FAMILY('ovario')], 1.3, false, 'CLAUS_1993'),
+  factor('CA_MAMA', 'Parente de 1º grau com câncer de ovário', [FAMILY('ovario')], 1.24, false, 'ZHENG_SCIREP_2018'),
   factor('CA_MAMA', 'Álcool: 8 a 14 doses por semana', range('alcoholDosesWeek', 8, 15), 1.15, true, 'HAMAJIMA_2002'),
   factor('CA_MAMA', 'Álcool: 15 doses ou mais por semana', range('alcoholDosesWeek', 15, null), 1.3, true, 'HAMAJIMA_2002'),
   factor('CA_MAMA', 'Obesidade (IMC ≥ 30) após os 50 anos', [{ field: 'bmi', op: 'gte', value: 30 }, AGE_GTE(50)], 1.15, true, 'RENEHAN_2008'),
@@ -441,7 +446,7 @@ const symptoms = [
   // ── Mama (mulher 25+)
   question('nodulo_mama', 'Caroço na mama ou axila',
     'Você percebeu algum caroço (nódulo) novo na mama ou na axila?',
-    'A maioria dos nódulos não é câncer, mas todo nódulo novo merece avaliação.',
+    'A maioria dos nódulos não é nada grave, mas todo nódulo novo merece avaliação.',
     2, [FEMALE, AGE_GTE(25)], ONCO_RAPIDO, 221),
   question('alteracao_mamilo', 'Mudança em um mamilo',
     'Notou mudança em um dos mamilos, como ele ficar virado para dentro ou sair líquido sem apertar?',
@@ -510,7 +515,8 @@ const conditionSymptoms = [
   // ── Mama
   cs('CA_MAMA', 'nodulo_mama', 0.441, 0.008, 'WALKER_2014', '1.762/3.994 casos vs 132/16.873 controles; LR 55. VPP 4,8% (40–49) a 48% (>70).'),
   cs('CA_MAMA', 'alteracao_mamilo', 0.0203, 0.00142, 'WALKER_2014', 'Retração ou secreção: 81/3.994 casos vs 24/16.873 controles; LR 14.'),
-  cs('CA_MAMA', 'alteracao_pele_mama', 0.001, 0.00007, 'WALKER_2014', '3 casos e 0 controles (não estimável); adotado o LR do mamilo (14) como piso conservador. Confiança C.'),
+  // alteracao_pele_mama: sem LR (Walker 2014 teve 3 casos e 0 controles).
+  // Vira regra direta do NICE NG12 (directRules, abaixo).
   cs('CA_MAMA', 'birads_4_5', 0.869, 0.013, 'LEHMAN_2017', 'Rastreamento (BCSC, 1,7 milhão de exames): VPP2 25,6% sobre prior de 0,51% (detecção 5,1/1.000) → LR = odds(0,256)/odds(0,0051) ≈ 67; pSx = sensibilidade 86,9%, pNoSx = 0,869/67. Coerente com o ACR BI-RADS 2013 (categoria 4 > 2%, 5 ≥ 95%).'),
 
   // ── Próstata
@@ -520,7 +526,10 @@ const conditionSymptoms = [
 
   // ── Colo do útero
   cs('CA_COLO_UTERO', 'sangramento_pos_coito', 0.11, 0.05, 'SHAPLEY_2006', '11% dos casos têm sangramento pós-coito; incidência na comunidade ~5%/ano (35–54 anos) → LR 2,2.'),
-  cs('CA_COLO_UTERO', 'sangramento_fora_ciclo', 0.20, 0.08, 'HIP_ESTIMATIVA_ONCO', 'Sem número publicado localizado; estimativa conservadora (LR 2,5) da mesma ordem do pós-coito. Confiança C.'),
+  // O QCancer só publica o LR+ (~7 entre menstruações, ~29 pós-menopausa).
+  // A pergunta junta os dois: fica o menor (7). pSx e pNoSx pequenos só para
+  // o LR+ dar 7 com LR− ≈ 1 ("não" não muda nada, o artigo não dá a fração).
+  cs('CA_COLO_UTERO', 'sangramento_fora_ciclo', 0.0007, 0.0001, 'QCANCER_F_2013', 'QCancer 2013: sangramento entre menstruações, risco ~7 vezes maior (pós-menopausa ~29). LR+ 7, LR− ≈ 1. Confiança C.'),
   cs('CA_COLO_UTERO', 'papanicolau_alterado', 0.625, 0.034, 'KOLIOPOULOS_2017', 'Citologia convencional ASC-US+: sens 62,5%, esp 96,6% para CIN2+ → LR 18,4.'),
   cs('CA_COLO_UTERO', 'hpv_alto_risco', 0.899, 0.101, 'KOLIOPOULOS_2017', 'HPV (HC2): sens 89,9%, esp 89,9% para CIN2+ → LR 8,9.'),
 ];
@@ -641,7 +650,16 @@ const profileFields = [
     showIf: [FEMALE, AGE_GTE(25)] },
 ];
 
+// ─── Regras diretas (sem número) ─────────────────────────────────────
+// Achado que leva a um nível mínimo sem LR, por recomendação de diretriz.
+// O riskEngine sobe o câncer para `level` se a resposta for "sim".
+const directRules = [
+  { conditionCode: 'CA_MAMA', symptomCode: 'alteracao_pele_mama', level: 'ATENÇÃO', sourceCode: 'NICE_NG12',
+    label: 'Alteração na pele da mama (NICE NG12: considerar encaminhamento por suspeita)' },
+];
+
 module.exports = {
+  directRules,
   sources,
   conditions,
   priorRules,

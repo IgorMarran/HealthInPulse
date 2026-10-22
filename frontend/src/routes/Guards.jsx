@@ -1,5 +1,5 @@
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, homeFor } from '@/contexts/AuthContext';
 
 // ─── Spinner de loading ───────────────────────────────────────
 function Spinner() {
@@ -42,10 +42,7 @@ export function PublicRoute({ children }) {
   const { user, loading } = useAuth();
 
   if (loading) return <Spinner />;
-  if (user) {
-    const dest = user.role === 'DOCTOR' ? '/doctor' : '/patient';
-    return <Navigate to={dest} replace />;
-  }
+  if (user) return <Navigate to={homeFor(user)} replace />;
 
   return children;
 }

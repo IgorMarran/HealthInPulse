@@ -4,6 +4,7 @@ const openaiService  = require('../services/openaiService');
 const patientService = require('../services/patientService');
 const doctorService  = require('../services/doctorService');
 const { authenticate, authorize } = require('../middlewares/authMiddleware');
+const patientView    = require('../services/patientView');
 const { parseAiReport, parseJson, stringifyJson } = require('../utils/jsonField');
 
 // ─── Service ─────────────────────────────────────────────────
@@ -93,18 +94,38 @@ const getReportForDoctor = async (reportId, doctorId) => {
 const router = Router();
 router.use(authenticate);
 
+// Relatório na versão do paciente (regra R2): o da triagem vira a visão
+// da triagem (próximo passo, faixa normal, exames preventivos); os outros
+// ficam com a médica. Nada de texto livre, nível de risco ou sugestões.
+const forPatient = async (report) => {
+  const triage = report.type === 'triage' && report.triageId
+    ? await prisma.triageAnswer.findUnique({ where: { id: report.triageId }, select: { answers: true } })
+    : null;
+  return patientView.reportForPatient(report, triage ? parseJson(triage.answers, {}) : null);
+};
+
 // Paciente: lista e detalha seus próprios relatórios
 router.get('/', authorize('PATIENT'), async (req, res, next) => {
   try {
     const patient = await patientService.getProfile(req.user.id);
-    res.json(await listReports(patient.id, req.query));
+    const where = { patientId: patient.id, ...(req.query.type ? { type: req.query.type } : {}) };
+    const page  = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+    const [total, rows] = await Promise.all([
+      prisma.aiReport.count({ where }),
+      prisma.aiReport.findMany({
+        where, skip: (page - 1) * limit, take: limit, orderBy: { generatedAt: 'desc' },
+        select: { id: true, type: true, triageId: true, generatedAt: true, doctor: { select: { fullName: true } } },
+      }),
+    ]);
+    res.json({ total, page, limit, items: await Promise.all(rows.map(forPatient)) });
   } catch (e) { next(e); }
 });
 
 router.get('/my/:reportId', authorize('PATIENT'), async (req, res, next) => {
   try {
     const patient = await patientService.getProfile(req.user.id);
-    res.json(await getReportById(req.params.reportId, patient.id));
+    res.json(await forPatient(await getReportById(req.params.reportId, patient.id)));
   } catch (e) { next(e); }
 });
 

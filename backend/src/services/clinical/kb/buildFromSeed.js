@@ -268,7 +268,11 @@ const assemble = (batches) => {
 // Devolve sempre um objeto novo, que pode ser alterado à vontade.
 const buildFromSeed = ({ includeOncology = true } = {}) => {
   const batches = [chronicSeed()];
-  if (includeOncology) batches.push(require('../data/oncology'));
+  if (includeOncology) {
+    batches.push(require('../data/oncology'));
+    // Fontes das faixas normais e das metas (data/prevention.js)
+    batches.push({ sources: require('../data/prevention').sources });
+  }
   // structuredClone corta referências aos arrays do seed (followUps,
   // options, when...): mexer no kb não mexe em questions.js nem nos dados.
   return structuredClone(assemble(batches));

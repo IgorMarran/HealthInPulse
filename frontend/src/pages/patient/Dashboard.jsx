@@ -1,3 +1,4 @@
+import { NextStepCard } from '@/components/prevention/PreventionView';
 import { useFetch } from '@/hooks';
 import { useLiveVitals } from '@/hooks/useLiveVitals';
 import { useCountUp } from '@/hooks/useCountUp';
@@ -5,7 +6,7 @@ import { patientService } from '@/services';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   Heart, Activity, Thermometer, Droplets, FileText, Calendar, Brain, AlertTriangle,
-  TrendingUp, TrendingDown, Minus, Bell, ChevronRight, Target, Coins, Gift,
+  TrendingUp, TrendingDown, Minus, Bell, ChevronRight, Target, Coins, Gift, ClipboardList,
 } from 'lucide-react';
 import { goalService } from '@/services';
 import { format, isToday, isTomorrow } from 'date-fns';
@@ -16,26 +17,25 @@ import {
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts';
 
-const RISK_CLASS = {
-  LOW:      'badge-low',
-  MODERATE: 'badge-moderate',
-  HIGH:     'badge-high',
-  CRITICAL: 'badge-critical',
-};
-const RISK_LABEL = { LOW: 'Baixo', MODERATE: 'Moderado', HIGH: 'Alto', CRITICAL: 'Crítico' };
 
+// Faixas normais com fonte (regra R1; mesmas de backend/.../data/prevention.js):
+// FC e SpO₂ do Guyton & Hall, pressão da Diretriz Brasileira de Hipertensão
+// 2025. Temperatura e glicose da pulseira ficam sem faixa: o livro não dá
+// corte de febre e a pulseira não sabe se a glicemia é de jejum.
 const RANGES = {
-  HR:   { ok: [60, 100],    unit: 'bpm',   label: 'Freq. Cardíaca' },
-  SYS:  { ok: [90, 130],    unit: 'mmHg',  label: 'Pressão Sist.'  },
-  SPO2: { ok: [95, 100],    unit: '%',     label: 'Saturação O₂'   },
-  TEMP: { ok: [35.8, 37.3], unit: '°C',    label: 'Temperatura'    },
-  GLU:  { ok: [70, 110],    unit: 'mg/dL', label: 'Glicose'        },
+  HR:   { ok: [60, 100],   unit: 'bpm',   label: 'Freq. Cardíaca' },
+  SYS:  { ok: [null, 119], unit: 'mmHg',  label: 'Pressão Sist.'  },
+  SPO2: { ok: [95, null],  unit: '%',     label: 'Saturação O₂'   },
+  TEMP: { ok: null,        unit: '°C',    label: 'Temperatura'    },
+  GLU:  { ok: null,        unit: 'mg/dL', label: 'Glicose'        },
 };
 
-function chipStatus(v, [lo, hi]) {
+function chipStatus(v, ok) {
   if (v == null) return { text: 'sem leitura', color: 'text-surface-400' };
-  if (v < lo)    return { text: 'abaixo', color: 'text-blue-600' };
-  if (v > hi)    return { text: 'acima',  color: 'text-orange-600' };
+  if (!ok)       return { text: '', color: 'text-surface-400' };
+  const [lo, hi] = ok;
+  if (lo != null && v < lo) return { text: 'abaixo', color: 'text-blue-600' };
+  if (hi != null && v > hi) return { text: 'acima',  color: 'text-orange-600' };
   return { text: 'normal', color: 'text-green-600' };
 }
 
@@ -133,13 +133,11 @@ export default function PatientDashboard() {
       [vitals.heartRate,   ...RANGES.HR.ok],
       [vitals.systolic,    ...RANGES.SYS.ok],
       [vitals.oxygenSat,   ...RANGES.SPO2.ok],
-      [vitals.temperature, ...RANGES.TEMP.ok],
-      [vitals.glucose,     ...RANGES.GLU.ok],
     ];
     for (const [v, lo, hi] of checks) {
       if (v == null) continue;
       total += 1;
-      if (v >= lo && v <= hi) pts += 1;
+      if ((lo == null || v >= lo) && (hi == null || v <= hi)) pts += 1;
     }
     return total ? Math.round((pts / total) * 100) : null;
   })();
@@ -181,10 +179,23 @@ export default function PatientDashboard() {
   }));
 
   const scoreColor = score == null ? '#94a3b8' : score >= 80 ? '#16a34a' : score >= 60 ? '#d97706' : '#dc2626';
-  const scoreLabel = score == null ? 'sem dados' : score >= 80 ? 'Bom estado' : score >= 60 ? 'Atenção'    : 'Crítico';
+  const scoreLabel = score == null ? 'sem dados' : score >= 80 ? 'Na faixa'   : score >= 60 ? 'Atenção'    : 'Fora da faixa';
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* ── Triagem: pendente (primeiro acesso) ou o próximo passo ── */}
+      {data?.triage?.pending ? (
+        <Link to="/patient/triage" className="glass p-4 flex items-center gap-3 border-amber-200 bg-amber-50/60 hover:bg-amber-50 transition-colors">
+          <ClipboardList size={18} className="text-amber-700 shrink-0" />
+          <span className="flex-1 text-sm text-amber-800">
+            <strong>Triagem pendente.</strong> Faça a triagem para receber suas metas.
+          </span>
+          <span className="text-amber-700">→</span>
+        </Link>
+      ) : data?.triage?.nextStep && data.triage.nextStep.code !== 'ROTINA' ? (
+        <NextStepCard step={data.triage.nextStep} />
+      ) : null}
+
       {/* ── Hero: saudação + score ──────────────────────────── */}
       <div className="glass p-6 flex flex-col md:flex-row items-start md:items-center gap-6 bg-gradient-to-br from-white to-brand-50/40">
         <div className="flex-1">
@@ -431,13 +442,12 @@ export default function PatientDashboard() {
             <div key={r.id} className="py-3 border-b border-surface-100 last:border-0 flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-surface-800 capitalize">
-                  {r.type === 'full' ? 'Relatório completo' : r.type}
+                  {r.type === 'triage' ? 'Resultado da triagem' : r.type === 'exam' ? 'Análise de exame' : 'Relatório para a sua médica'}
                 </p>
                 <p className="text-xs text-surface-500">
                   {format(new Date(r.generatedAt), "dd MMM", { locale: ptBR })}
                 </p>
               </div>
-              {r.riskLevel && <span className={RISK_CLASS[r.riskLevel]}>{RISK_LABEL[r.riskLevel]}</span>}
             </div>
           ))}
         </div>
@@ -461,8 +471,10 @@ export default function PatientDashboard() {
                   {format(new Date(e.uploadedAt), "dd MMM yyyy", { locale: ptBR })}
                 </p>
               </div>
-              {e.examResult?.riskLevel
-                ? <span className={RISK_CLASS[e.examResult.riskLevel]}>{RISK_LABEL[e.examResult.riskLevel]}</span>
+              {e.examResult
+                ? <span className={e.examResult.outOfRange ? 'badge-moderate' : 'badge-green'}>
+                    {e.examResult.outOfRange ? `${e.examResult.outOfRange} fora da faixa` : 'Dentro da faixa'}
+                  </span>
                 : <span className="text-[10px] text-surface-400 uppercase">{e.status === 'PROCESSING' ? 'Processando' : 'Aguardando'}</span>}
             </div>
           ))}

@@ -1,39 +1,31 @@
 // Reports.jsx
+// Regra R2: o backend manda a versão do paciente. O relatório da triagem
+// vem como visão de prevenção (próximo passo, sinais, exames preventivos);
+// os outros (exame, relatório completo) ficam com a médica e aparecem só
+// com um aviso.
 import { useFetch } from '@/hooks';
 import { aiReportService } from '@/services';
 import { Brain, ChevronRight } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useState } from 'react';
-
-const RISK_CLASS = { LOW: 'badge-low', MODERATE: 'badge-moderate', HIGH: 'badge-high', CRITICAL: 'badge-critical' };
-const RISK_LABEL = { LOW: 'Baixo', MODERATE: 'Moderado', HIGH: 'Alto', CRITICAL: 'Crítico' };
+import {
+  NextStepCard, VitalsList, ExamList, NEXT_STEP_LABEL, NEXT_STEP_BADGE,
+} from '@/components/prevention/PreventionView';
 
 function ReportModal({ report, onClose }) {
   if (!report) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-900/40 backdrop-blur-sm">
-      <div className="glass p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto animate-slide-up">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-display font-semibold text-lg capitalize">{report.type}</h3>
-          <button onClick={onClose} className="btn-ghost p-1">✕</button>
+      <div className="glass bg-surface-50 p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto animate-slide-up space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display font-semibold text-lg">{report.title}</h3>
+          <button onClick={onClose} className="btn-ghost p-1" aria-label="Fechar">✕</button>
         </div>
-        {report.riskLevel && (
-          <span className={`${RISK_CLASS[report.riskLevel]} mb-4 inline-block`}>
-            Risco {RISK_LABEL[report.riskLevel]}
-          </span>
-        )}
-        <div className="prose prose-invert prose-sm max-w-none text-surface-600 leading-relaxed whitespace-pre-wrap font-sans text-sm">
-          {report.content}
-        </div>
-        {report.suggestions?.length > 0 && (
-          <div className="mt-4 space-y-2">
-            <p className="text-xs font-medium text-surface-500 uppercase tracking-wide">Recomendações</p>
-            {report.suggestions.map((s, i) => (
-              <div key={i} className="glass p-3 text-sm text-surface-600">{s.text}</div>
-            ))}
-          </div>
-        )}
+        {report.text && <p className="text-sm text-surface-600">{report.text}</p>}
+        <NextStepCard step={report.nextStep} />
+        <VitalsList vitals={report.vitals} />
+        <ExamList items={report.screening} />
       </div>
     </div>
   );
@@ -41,7 +33,6 @@ function ReportModal({ report, onClose }) {
 
 export function Reports() {
   const { data, loading } = useFetch(() => aiReportService.list({ limit: 20 }));
-  const [selected, setSelected] = useState(null);
 
   const [detail, setDetail] = useState(null);
   const openReport = async (r) => {
@@ -54,14 +45,14 @@ export function Reports() {
     <div className="space-y-5 animate-fade-in">
       <div>
         <h1 className="font-display text-2xl font-bold">Relatórios IA</h1>
-        <p className="text-surface-500 text-sm mt-0.5">Análises geradas pela inteligência artificial</p>
+        <p className="text-surface-500 text-sm mt-0.5">Os resultados das suas triagens</p>
       </div>
       <div className="space-y-2">
         {loading && <p className="text-surface-400 text-sm text-center py-8">Carregando…</p>}
         {!loading && reports.length === 0 && (
           <div className="glass p-8 text-center text-surface-400 text-sm">
             <Brain size={28} className="mx-auto mb-2 opacity-30" />
-            Nenhum relatório gerado ainda
+            Nenhum relatório ainda
           </div>
         )}
         {reports.map((r) => (
@@ -70,10 +61,10 @@ export function Reports() {
               <Brain size={18} className="text-brand-600" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-medium capitalize">{r.type === 'full' ? 'Relatório Completo' : r.type}</p>
+              <p className="text-sm font-medium">{r.title}</p>
               <p className="text-xs text-surface-500">{format(new Date(r.generatedAt), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}</p>
             </div>
-            {r.riskLevel && <span className={RISK_CLASS[r.riskLevel]}>{RISK_LABEL[r.riskLevel]}</span>}
+            {r.nextStep && <span className={NEXT_STEP_BADGE[r.nextStep.code]}>{NEXT_STEP_LABEL[r.nextStep.code]}</span>}
             <ChevronRight size={14} className="text-surface-300" />
           </button>
         ))}

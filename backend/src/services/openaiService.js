@@ -26,12 +26,15 @@ const analyzeExam = async ({ base64, mimeType }) => {
 Analise o documento fornecido e retorne APENAS um JSON com a estrutura:
 {
   "ocrText": "texto extraído do documento",
-  "summary": "resumo clínico em linguagem simples para o paciente",
+  "summary": "resumo clínico para a médica",
   "findings": [
-    { "name": "nome do marcador", "value": "valor encontrado", "unit": "unidade", "status": "normal|alto|baixo|critico" }
+    { "name": "nome do marcador", "value": "valor encontrado", "unit": "unidade",
+      "referenceRange": "faixa de referência IMPRESSA no próprio laudo", "status": "normal|alto|baixo" }
   ],
   "riskLevel": "LOW|MODERATE|HIGH|CRITICAL"
-}`,
+}
+Regras: o "status" compara o valor só com a faixa de referência impressa no laudo; se o laudo não traz
+faixa para o marcador, use "status": null. Não invente faixa.`,
       },
       {
         role: 'user',
@@ -184,11 +187,15 @@ const analyzeVitalSign = async (vital, patientContext) => {
     // Heurística simples
     let severity = 'none';
     const msgs = [];
-    if (vital.oxygenSat != null && vital.oxygenSat < 92) { severity = 'high';   msgs.push(`SpO₂ ${vital.oxygenSat}% — saturação baixa`); }
-    else if (vital.oxygenSat != null && vital.oxygenSat < 95) { severity = 'medium'; msgs.push(`SpO₂ ${vital.oxygenSat}% — atenção`); }
-    if (vital.systolic > 160) { severity = 'high';   msgs.push(`Sistólica ${vital.systolic} mmHg — pressão muito alta`); }
-    else if (vital.systolic > 140) { severity = severity === 'high' ? 'high' : 'medium'; msgs.push(`Sistólica ${vital.systolic} mmHg`); }
-    if (vital.glucose > 250)  { severity = 'high';   msgs.push(`Glicemia ${vital.glucose} mg/dL — descompensada`); }
+    // Texto vai para o paciente: só o sinal x faixa normal, sem doença (regra R2)
+    if (vital.oxygenSat != null && vital.oxygenSat < 92) { severity = 'high';   msgs.push(`SpO₂ ${vital.oxygenSat}%, bem abaixo da faixa normal (95–99%)`); }
+    else if (vital.oxygenSat != null && vital.oxygenSat < 95) { severity = 'medium'; msgs.push(`SpO₂ ${vital.oxygenSat}%, abaixo da faixa normal (95–99%)`); }
+    // Pressão pelos estágios da Diretriz Brasileira de Hipertensão 2025 (Quadro 3.2):
+    // 160 e/ou 100 (estágio 2) e 140 e/ou 90 (estágio 1). SpO₂ < 92: NEWS2 (RCP 2017).
+    const pa = `${vital.systolic ?? '?'}/${vital.diastolic ?? '?'} mmHg`;
+    if (vital.systolic >= 160 || vital.diastolic >= 100) { severity = 'high'; msgs.push(`Pressão ${pa}, bem acima da faixa normal`); }
+    else if (vital.systolic >= 140 || vital.diastolic >= 90) { severity = severity === 'high' ? 'high' : 'medium'; msgs.push(`Pressão ${pa}, acima da faixa normal`); }
+    if (vital.glucose > 250)  { severity = 'high';   msgs.push(`Glicemia ${vital.glucose} mg/dL, muito acima do esperado`); }
     return {
       alert:    severity !== 'none',
       severity,
@@ -202,6 +209,7 @@ const analyzeVitalSign = async (vital, patientContext) => {
       {
         role: 'system',
         content: `Analise o sinal vital e determine se há algum alerta.
+A mensagem vai para o paciente: descreva só o sinal em relação à faixa normal, sem citar nem sugerir nenhuma doença.
 Retorne APENAS JSON: { "alert": boolean, "severity": "none|low|medium|high", "message": "descrição" }`,
       },
       {

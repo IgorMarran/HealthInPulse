@@ -23,12 +23,17 @@ datasource db {
 //   AuditAction:       CREATE | UPDATE | DELETE | LOGIN | LOGOUT | VIEW | EXPORT
 
 model User {
-  id            String   @id @default(uuid())
-  email         String   @unique
+  id             String    @id @default(uuid())
+  // Login é por usuário (único, minúsculo). E-mail ficou opcional: o cadastro
+  // do paciente pede só usuário, nome e senha.
+  username       String    @unique
+  email          String?   @unique
   passwordHash  String
   role          String
   isActive      Boolean  @default(true)
   emailVerified Boolean  @default(false)
+  // Tutorial das abas: aparece uma vez por conta (null = ainda não viu)
+  tutorialSeenAt DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -53,9 +58,11 @@ model Patient {
   id             String    @id @default(uuid())
   userId         String    @unique
   fullName       String
-  dateOfBirth    DateTime
-  gender         String
-  cpf            String    @unique
+  // Opcionais: idade e sexo vêm da triagem; o CPF saiu do app (coluna fica
+  // para dados antigos)
+  dateOfBirth    DateTime?
+  gender         String?
+  cpf            String?   @unique
   phone          String?
   avatarUrl      String?
   bloodType      String?
@@ -307,6 +314,9 @@ model HealthGoal {
   status       String    @default("ACTIVE")
   coinsReward  Int       @default(50)
   source       String?
+  // Modelo da meta (data/prevention.js) e a fonte que a embasa (ClinicalSource.code)
+  templateCode String?
+  sourceCode   String?
   startedAt    DateTime  @default(now())
   completedAt  DateTime?
 

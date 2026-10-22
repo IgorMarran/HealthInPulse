@@ -26,12 +26,12 @@ const DEMO_PASSWORD = process.argv.find((a) => a.startsWith('--demo-password='))
   ?.slice('--demo-password='.length);
 
 const DEMO_USERS = [
-  { email: 'joao@healthinpulse.dev',    password: 'Joao@123',    dashboard: '/api/patient/dashboard' },
-  { email: 'marina@healthinpulse.dev',  password: 'Marina@123',  dashboard: '/api/patient/dashboard' },
-  { email: 'roberto@healthinpulse.dev', password: 'Roberto@123', dashboard: '/api/patient/dashboard' },
-  { email: 'doctor@healthinpulse.dev',  password: 'Doctor@123',  dashboard: '/api/doctor/dashboard' },
+  { username: 'joao',    password: 'Joao@123',    dashboard: '/api/patient/dashboard' },
+  { username: 'marina',  password: 'Marina@123',  dashboard: '/api/patient/dashboard' },
+  { username: 'roberto', password: 'Roberto@123', dashboard: '/api/patient/dashboard' },
+  { username: 'ana',     password: 'Doctor@123',  dashboard: '/api/doctor/dashboard' },
 ];
-const DOCTOR_EMAIL = 'doctor@healthinpulse.dev';
+const DOCTOR_USER = 'ana';
 
 // O que a médica vê de cada persona no painel de risco (seed da feira)
 const PERSONAS = [
@@ -122,7 +122,7 @@ async function checkDemoGate() {
     const api = await http(`${BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({ email: DEMO_USERS[0].email, password: DEMO_USERS[0].password }),
+      body: JSON.stringify({ username: DEMO_USERS[0].username, password: DEMO_USERS[0].password }),
     });
     assert(api.status === 401, `login sem passar pelo portão respondeu ${api.status}`);
   });
@@ -176,15 +176,17 @@ async function checkQuickTest() {
     }
     assert(res.stage === 'RESULT', `terminou em ${res.stage} depois de ${Object.keys(answers).length} respostas`);
     assert(Object.keys(answers).length > 0, 'nenhuma pergunta feita');
-    const codes = res.oncology?.conditions?.map((c) => c.code) ?? [];
-    assert(codes.includes('CA_COLORRETAL') && codes.includes('CA_PULMAO'), `condições: ${codes.join(', ')}`);
-    assert(res.screening?.some((s) => s.conditionCode === 'CA_PULMAO'), 'TC de pulmão não indicada');
+    // Regra R2: o visitante recebe próximo passo, exames e hábitos, nunca doença
+    assert(!('oncology' in res), 'resultado do /teste trouxe o risco por câncer');
+    assert(!/c[âa]ncer|CA_[A-Z]|INVESTIGAR/i.test(JSON.stringify(res)), 'resultado do /teste cita doença');
+    assert(['ROTINA', 'CONSULTA', 'AGORA'].includes(res.nextStep?.code), `próximo passo ${res.nextStep?.code}`);
+    assert(res.habits?.some((h) => h.code === 'ATIVIDADE_150'), 'hábitos sem a atividade física');
   });
 }
 
 // Painel de risco da médica (personas do seed) e a Base da IA
 async function checkDoctorRisk() {
-  const token = tokens[DOCTOR_EMAIL];
+  const token = tokens[DOCTOR_USER];
   if (!token) return; // o login da médica já falhou acima
 
   const { patients } = await api('/api/doctor/patients?limit=100', { token });
@@ -229,17 +231,17 @@ async function main() {
     if (DEMO_PASSWORD) await checkDemoGate();
 
     for (const user of DEMO_USERS) {
-      await check(`login + dashboard (${user.email})`, async () => {
+      await check(`login + dashboard (${user.username})`, async () => {
         const login = await http(`${BASE}/api/auth/login`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ email: user.email, password: user.password }),
+          body: JSON.stringify({ username: user.username, password: user.password }),
         });
         const body = await login.text();
         assert(login.ok, `login respondeu ${login.status}: ${body}`);
         const { accessToken } = JSON.parse(body);
         assert(accessToken, 'login não devolveu accessToken');
-        tokens[user.email] = accessToken;
+        tokens[user.username] = accessToken;
 
         const dash = await http(`${BASE}${user.dashboard}`, {
           headers: { authorization: `Bearer ${accessToken}` },

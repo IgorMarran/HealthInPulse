@@ -24,6 +24,9 @@ const bayes = require('./bayes');
 const redFlags = require('./redFlags');
 const screening = require('./screening');
 const { normalizeProfile } = require('./profile');
+const { directRules } = require('./data/oncology');
+
+const isYes = (v) => v === true || v === 1 || v === '1' || v === 'sim' || v === 'Sim' || v === 'true';
 
 const LEVEL = { INVESTIGAR: 'INVESTIGAR', ATENCAO: 'ATENÇÃO', ROTINA: 'ROTINA' };
 const LEVEL_RANK = { [LEVEL.ROTINA]: 0, [LEVEL.ATENCAO]: 1, [LEVEL.INVESTIGAR]: 2 };
@@ -244,6 +247,15 @@ const assess = (kb, {
     .map(code => condByCode.get(code))
     .filter(c => !c.sexFilter || !profile.sex || c.sexFilter === profile.sex)
     .map(c => assessCondition(c, oncoExplain[c.code], profile, ctx));
+
+  // Regras diretas da diretriz (sem LR): sobem o nível mínimo do câncer
+  for (const r of directRules) {
+    const o = oncology.find(x => x.code === r.conditionCode && x.eligible);
+    if (!o || !isYes(answers[r.symptomCode]) || LEVEL_RANK[o.level] >= LEVEL_RANK[r.level]) continue;
+    o.level = r.level;
+    o.riskLevel = LEVEL_TO_RISK[r.level];
+    o.directRule = { label: r.label, source: sourceInfo(ctx.sourceByCode, r.sourceCode) };
+  }
 
   // Crônicas: posterior com o "por quê" (o nível crônico continua sendo
   // o da triagem: engine.classifyRisk sobre o maior posterior)

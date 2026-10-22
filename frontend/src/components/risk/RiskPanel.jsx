@@ -67,35 +67,36 @@ function BasedOn({ basedOn }) {
   );
 }
 
-// Crônicas: barras como o Leaderboard da triagem (fecha por padrão)
-function ChronicList({ chronic, showPct = true }) {
+// Crônicas: escores validados da última triagem, com o corte e a fonte
+// (o motor bayesiano crônico saiu por falta de fonte; regra R1)
+function ChronicList({ chronic }) {
   const [open, setOpen] = useState(false);
-  if (!chronic?.conditions?.length) return null;
-  const list = [...chronic.conditions].sort((a, b) => b.posterior - a.posterior);
+  if (!chronic?.scores?.length) return null;
   return (
     <div className="glass p-4">
       <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
         className="w-full flex items-center justify-between gap-2 text-left">
         <span className="text-sm font-medium text-surface-700">
-          Doenças crônicas (motor bayesiano)
+          Doenças crônicas (escores validados)
           {chronic.riskLevel && <span className={clsx(RISK_CLASS[chronic.riskLevel], 'ml-2')}>{RISK_LABEL[chronic.riskLevel]}</span>}
         </span>
         <ChevronDown size={16} className={clsx('text-surface-400 transition-transform', open && 'rotate-180')} aria-hidden />
       </button>
       {open && (
-        <div className="space-y-2 mt-3 animate-fade-in">
-          {list.map((h) => (
-            <div key={h.code} className="flex items-center gap-2">
-              <span className="text-xs text-surface-700 flex-1 truncate">{h.label}</span>
-              <div className="w-32 h-1.5 bg-surface-100 rounded-full overflow-hidden">
-                <div className="h-full bg-brand-500" style={{ width: `${Math.round(h.posterior * 100)}%` }} />
+        <ul className="space-y-3 mt-3 animate-fade-in">
+          {chronic.scores.map((s) => (
+            <li key={s.code} className="text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-surface-800">{s.label}</span>
+                <span className="text-surface-600 tabular-nums">{s.scale} {s.score}/{s.max}</span>
+                <span className={s.positive ? 'badge-moderate' : 'badge-low'}>{s.category}</span>
+                <span className="text-surface-400">corte {s.cutoff}</span>
               </div>
-              {showPct && (
-                <span className="text-xs text-surface-500 w-10 text-right tabular-nums">{Math.round(h.posterior * 100)}%</span>
-              )}
-            </div>
+              <p className="text-surface-500 mt-0.5">{s.interpretation}</p>
+              <p className="text-[11px] text-surface-400 mt-0.5">Fonte: {s.source}</p>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );
@@ -204,7 +205,7 @@ export default function RiskPanel({ load, deps = [], audience = 'doctor', title 
         </div>
       </div>
 
-      <ChronicList chronic={data.chronic} showPct={audience === 'doctor'} />
+      <ChronicList chronic={data.chronic} />
 
       {/* O disclaimer da API fala de %: só para a médica */}
       <Disclaimer audience={audience} text={audience === 'doctor' ? data.disclaimer : undefined} variant="inline" />

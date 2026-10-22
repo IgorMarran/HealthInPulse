@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { useFetch, useAsync } from '@/hooks';
 import { patientService } from '@/services';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, Save } from 'lucide-react';
+import { User, Save, Compass } from 'lucide-react';
+import { useOutletContext } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 export default function PatientProfile() {
   const { user }                   = useAuth();
+  const { openTutorial }           = useOutletContext() ?? {};
   const { data, loading, refetch } = useFetch(patientService.getProfile);
   const { run, loading: saving }   = useAsync(patientService.updateProfile);
 
@@ -47,6 +49,12 @@ export default function PatientProfile() {
         <p className="text-surface-500 text-sm mt-0.5">Suas informações pessoais</p>
       </div>
 
+      {openTutorial && (
+        <button onClick={openTutorial} className="btn-ghost text-sm">
+          <Compass size={14} /> Rever tutorial das abas
+        </button>
+      )}
+
       {/* Avatar */}
       <div className="glass p-5 flex items-center gap-4">
         <div className="w-14 h-14 rounded-2xl bg-brand-100 flex items-center justify-center text-brand-600 text-xl font-bold shrink-0">
@@ -54,7 +62,7 @@ export default function PatientProfile() {
         </div>
         <div>
           <p className="font-medium text-surface-800">{form.fullName}</p>
-          <p className="text-xs text-surface-500">{user?.email}</p>
+          <p className="text-xs text-surface-500">@{user?.username}</p>
         </div>
       </div>
 

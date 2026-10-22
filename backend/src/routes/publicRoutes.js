@@ -4,6 +4,7 @@ const { body, checkExact } = require('express-validator');
 const { validate }   = require('../middlewares/validationMiddleware');
 const kbRepository   = require('../services/clinical/kb/kbRepository');
 const quickTest      = require('../services/quickTestService');
+const patientView  = require('../services/patientView');
 const { FAMILY_CANCER_VALUES } = require('../services/clinical/profile');
 
 // ─── Rotas públicas (sem login) ──────────────────────────────
@@ -72,7 +73,10 @@ const quickTestRules = checkExact([
 const runQuickTest = async (req, res, next) => {
   try {
     const kb = await kbRepository.get();
-    res.json(quickTest.run(kb, { profile: req.body?.profile ?? {}, answers: req.body?.answers ?? {} }));
+    const profile = req.body?.profile ?? {};
+    const r = quickTest.run(kb, { profile, answers: req.body?.answers ?? {} });
+    // Visitante não ouve doença (regra R2): sai pelo patientView
+    res.json(patientView.quickTestForVisitor(r, profile));
   } catch (err) {
     if (err.status === 422 && err.fields) {
       return res.status(422).json({ error: err.message, fields: err.fields });

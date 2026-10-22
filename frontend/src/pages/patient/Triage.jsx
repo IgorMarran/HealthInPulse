@@ -1,45 +1,37 @@
 // ─── Triage.jsx ───────────────────────────────────────────────
 // Fluxo adaptativo: PROFILE → QUESTION (loop) → RESULT.
-// Cada round o backend devolve a próxima pergunta + ranking parcial
-// das hipóteses + resumo do que a pulseira Care Plus detectou.
-// As perguntas vêm em duas etapas: 1) condições crônicas (status
-// INTERVIEW) e 2) câncer (status ONCO_INTERVIEW, phase ONCOLOGIA, com o
-// "porquê" de cada pergunta). O resultado traz `result.oncology`, mostrado
-// como para o visitante do stand: sem %, sem vermelho, RR só acima de 1,2×.
+// Regra R2: o paciente nunca vê doença. O backend (patientView) já manda
+// a pergunta sem o "porquê" e sem o ranking de hipóteses, e o resultado
+// como visão de prevenção: próximo passo, sinais x faixa normal, exames
+// preventivos e metas. No primeiro acesso a triagem vem antes de tudo, e
+// o tutorial das abas abre quando o resultado aparece (ou em "Fazer depois").
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { useFetch } from '@/hooks';
 import { useAuth } from '@/contexts/AuthContext';
 import { triageService } from '@/services';
 import {
-  ClipboardList, ChevronRight, CheckCircle, Sparkles, Coins, Target,
-  HelpCircle, Activity, AlertTriangle, Watch, TrendingUp, Microscope, FlaskConical, Leaf,
+  ClipboardList, ChevronRight, Sparkles, Coins, Target, Activity, Watch, HandHeart,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useOutletContext } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import confetti from 'canvas-confetti';
 import ProfileField from '@/components/triage/ProfileField';
 import QuestionCard from '@/components/triage/QuestionCard';
-import ConditionRiskCard from '@/components/risk/ConditionRiskCard';
-import ScreeningList from '@/components/risk/ScreeningList';
 import Disclaimer from '@/components/common/Disclaimer';
-import { RISK_CLASS, RISK_LABEL, oncoLevel } from '@/lib/risk';
+import {
+  NextStepCard, VitalsList, ExamList, NEXT_STEP_LABEL, NEXT_STEP_BADGE,
+} from '@/components/prevention/PreventionView';
 import { isFieldVisible, visibleProfile } from '@/lib/conditions';
 
-const PATIENT_DISCLAIMER =
-  'Triagem de risco, não diagnóstico. Os números são estimativas didáticas; quem decide os exames é você com o seu médico.';
-
-// Confete só quando não há risco nenhum: crônico baixo, câncer em rotina
-// e sem red flag (a v7 soltava confete até em risco alto).
-const noRisk = (data) =>
-  data.result?.riskLevel === 'LOW' && !data.redFlag &&
-  (!data.result.oncology || data.result.oncology.level === 'ROTINA');
-
 export function Triage() {
-  const { refreshCoins } = useAuth();
+  const { user, refreshCoins } = useAuth();
+  const { openTutorial }       = useOutletContext() ?? {};
+  const navigate               = useNavigate();
+  const firstAccess            = user && !user.tutorialSeenAt;
   const { data: history, refetch } = useFetch(() => triageService.getHistory({ limit: 5 }));
 
   const [session, setSession]   = useState(null);   // payload do backend
@@ -77,7 +69,8 @@ export function Triage() {
       const { data } = await triageService.answer(session.triageId, payload);
       setSession(data);
       if (data.stage === 'RESULT') {
-        if (noRisk(data)) {
+        // Confete só quando o próximo passo é manter a rotina
+        if (data.view?.nextStep?.code === 'ROTINA') {
           confetti({ particleCount: 80, spread: 70, origin: { y: 0.5 },
             colors: ['#003F7E', '#00A0DC', '#fbbf24', '#16a34a'] });
         }
@@ -90,6 +83,17 @@ export function Triage() {
 
   const restart = () => { setSession(null); setProfileForm({}); };
 
+  // Primeiro acesso: o tutorial abre quando o resultado aparece
+  const showingResult = session?.stage === 'RESULT';
+  useEffect(() => {
+    if (showingResult && firstAccess) openTutorial?.();
+  }, [showingResult]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const later = () => {
+    navigate('/patient');
+    openTutorial?.();
+  };
+
   // ─── Header padrão ───────────────────────────────────────
   const Header = (
     <div>
@@ -97,7 +101,7 @@ export function Triage() {
         <ClipboardList size={22} /> Triagem clínica
       </h1>
       <p className="text-surface-500 text-sm mt-0.5">
-        Motor bayesiano com 8 condições crônicas + risco de 5 cânceres + dados da pulseira Care Plus
+        Perguntas rápidas sobre o seu dia a dia, junto com os dados da pulseira Care Plus
       </p>
     </div>
   );
@@ -108,16 +112,21 @@ export function Triage() {
       <div className="space-y-6 animate-fade-in max-w-2xl">
         {Header}
         <div className="glass p-8 text-center space-y-4">
-          <Sparkles size={40} className="text-brand-700 mx-auto" />
-          <p className="font-display font-semibold text-lg">Pronto para começar?</p>
+          {firstAccess ? <HandHeart size={40} className="text-brand-700 mx-auto" /> : <Sparkles size={40} className="text-brand-700 mx-auto" />}
+          <p className="font-display font-semibold text-lg">
+            {firstAccess ? `Boas-vindas${user?.fullName ? `, ${user.fullName.split(' ')[0]}` : ''}!` : 'Pronto para começar?'}
+          </p>
           <p className="text-surface-500 text-sm">
-            Esta triagem usa dados da sua pulseira + um motor adaptativo
-            que escolhe perguntas com maior poder discriminativo. Demora cerca
-            de 2 minutos.
+            {firstAccess
+              ? 'Antes de tudo, uma triagem rápida para o app conhecer você. Com ela montamos suas metas. Leva cerca de 2 minutos.'
+              : 'A triagem usa os dados da sua pulseira e escolhe as perguntas que mais importam para você. Leva cerca de 2 minutos.'}
           </p>
           <button onClick={start} disabled={busy} className="btn-primary mx-auto">
             {busy ? 'Iniciando…' : 'Iniciar triagem'}
           </button>
+          {firstAccess && (
+            <button onClick={later} className="btn-ghost mx-auto text-surface-500">Fazer depois</button>
+          )}
         </div>
         {history?.items?.length > 0 && <History items={history.items} />}
       </div>
@@ -143,7 +152,7 @@ export function Triage() {
         {Header}
         {wearableBox}
         <div className="glass p-6 space-y-4">
-          <p className="font-medium text-surface-800">Confirme seus dados (isso ajusta a probabilidade base)</p>
+          <p className="font-medium text-surface-800">Confirme seus dados</p>
           <div className="grid grid-cols-2 gap-3">
             {session.schema.map((field) => (
               <ProfileField
@@ -174,14 +183,11 @@ export function Triage() {
         <QuestionCard
           question={session.question}
           progress={session.progress}
-          explanation={onco ? null : session.explanation}
-          reason={session.reason}
+          explanation={null}
+          reason={null}
           busy={busy}
           onAnswer={answerSymptom}
         />
-        {session.leaderboard?.length > 0 && (
-          <Leaderboard items={session.leaderboard} />
-        )}
       </div>
     );
   }
@@ -191,12 +197,7 @@ export function Triage() {
     return (
       <div className="space-y-6 animate-fade-in max-w-2xl">
         {Header}
-        {session.redFlag ? (
-          <RedFlagCard redFlag={session.redFlag} onRestart={restart} />
-        ) : (
-          <ResultCard result={session.result} onRestart={restart} />
-        )}
-        <OncologyResult oncology={session.result?.oncology} />
+        <ResultView view={session.view} onRestart={restart} />
         {history?.items?.length > 0 && <History items={history.items} />}
       </div>
     );
@@ -208,13 +209,13 @@ export function Triage() {
 // ─── Etapas: 1) crônicas, 2) câncer ───────────────────────
 function PhaseBanner({ onco }) {
   const steps = [
-    { n: 1, label: 'Condições crônicas', active: !onco, done: onco },
-    { n: 2, label: 'Câncer',             active: onco,  done: false },
+    { n: 1, label: 'Seu dia a dia',  active: !onco, done: onco },
+    { n: 2, label: 'Outros sinais',  active: onco,  done: false },
   ];
   return (
     <div className="glass p-4 space-y-2">
       <p className="text-sm font-medium text-surface-800">
-        {onco ? 'Etapa 2 de 2 — câncer' : 'Etapa 1 de 2 — condições crônicas'}
+        {onco ? 'Etapa 2 de 2 — outros sinais' : 'Etapa 1 de 2 — seu dia a dia'}
       </p>
       <div className="flex gap-2" aria-hidden>
         {steps.map((st) => (
@@ -227,113 +228,18 @@ function PhaseBanner({ onco }) {
         ))}
       </div>
       {onco && (
-        <p className="text-xs text-surface-500 flex items-start gap-1.5">
-          <Microscope size={13} className="shrink-0 mt-px text-brand-500" aria-hidden />
-          Algumas perguntas sobre sinais que valem um exame. Responder “sim” não quer dizer câncer:
-          na maioria das vezes a causa é outra.
-        </p>
-      )}
-    </div>
-  );
-}
-
-// ─── Resultado oncológico (etapa 2) ──────────────────────
-// Para o paciente, como para o visitante do stand: categoria, frequência
-// natural e risco relativo (sem %); verde → âmbar → laranja, nunca vermelho.
-function OncologyResult({ oncology }) {
-  const conds = oncology?.conditions ?? [];
-  if (!conds.length) return null;
-  const lv = oncoLevel(oncology.level);
-  const eligible    = conds.filter((c) => c.eligible && c.display);
-  const notEligible = conds.filter((c) => !c.eligible || !c.display);
-  const screening   = (oncology.screening ?? []).filter((s) => s.status !== 'FUTURO');
-  const future      = (oncology.screening ?? []).filter((s) => s.status === 'FUTURO');
-  const modifiable  = [...new Map((oncology.modifiable ?? []).map((m) => [m.label, m])).values()];
-  const extra = [
-    ...(oncology.labs ?? []).map((l) => ({ key: l.ruleId, text: `${l.examTitle || l.findingName}: ${l.label.toLowerCase()}` })),
-    ...(oncology.weightTrend?.summary ? [{ key: 'balanca', text: oncology.weightTrend.summary }] : []),
-  ];
-
-  return (
-    <section className="space-y-4" aria-labelledby="onco-title">
-      <div className={clsx('glass p-5 border', lv.soft)}>
-        <p className="section-title">Etapa 2 de 2 · câncer (triagem de risco)</p>
-        <div className="flex items-center gap-2 mt-2 flex-wrap">
-          <span className={lv.badge}>{lv.label}</span>
-          <h2 id="onco-title" className="font-display font-semibold text-surface-900">{lv.headline}</h2>
-        </div>
-        <p className="text-sm text-surface-600 mt-2 leading-relaxed">{lv.visitor}</p>
-      </div>
-
-      {eligible.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {eligible.map((c) => <ConditionRiskCard key={c.code} condition={c} audience="visitor" />)}
-        </div>
-      )}
-      {notEligible.length > 0 && (
         <p className="text-xs text-surface-500">
-          Não avaliados agora: {notEligible.map((c) => `${c.label} (${c.reason || 'fora da faixa'})`).join(' · ')}
+          Algumas perguntas sobre sinais que valem uma conversa com o médico. Responder “sim” não quer
+          dizer que há algo errado.
         </p>
       )}
-
-      {extra.length > 0 && (
-        <div className="glass p-4">
-          <p className="section-title mb-2 flex items-center gap-1"><FlaskConical size={12} /> Também entraram no cálculo</p>
-          <ul className="text-sm text-surface-700 space-y-1 list-disc list-inside">
-            {extra.map((e) => <li key={e.key}>{e.text}</li>)}
-          </ul>
-        </div>
-      )}
-
-      <div className="glass p-5 space-y-3">
-        <p className="section-title">Rastreamento indicado</p>
-        <ScreeningList items={screening} future={future} audience="visitor" />
-      </div>
-
-      {modifiable.length > 0 && (
-        <div className="glass p-5 space-y-2">
-          <p className="section-title flex items-center gap-1"><Leaf size={12} /> O que você pode mudar</p>
-          <ul className="text-sm text-surface-700 space-y-1 list-disc list-inside">
-            {modifiable.map((m) => <li key={m.ruleId}>{m.label} <span className="text-surface-400">({m.conditionLabel.toLowerCase()})</span></li>)}
-          </ul>
-        </div>
-      )}
-
-      <Disclaimer text={PATIENT_DISCLAIMER} audience="visitor" />
-    </section>
-  );
-}
-
-// ─── Leaderboard parcial de hipóteses ─────────────────────
-function Leaderboard({ items }) {
-  return (
-    <div className="glass p-4">
-      <p className="text-xs text-surface-500 mb-2 flex items-center gap-1">
-        <TrendingUp size={12} /> Hipóteses com maior probabilidade no momento
-      </p>
-      <div className="space-y-2">
-        {items.map((h) => (
-          <div key={h.code} className="flex items-center gap-2">
-            <span className="text-xs text-surface-700 flex-1 truncate">{h.label}</span>
-            <div className="w-32 h-1.5 bg-surface-100 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-brand-500"
-                style={{ width: `${Math.round(h.posterior * 100)}%` }}
-              />
-            </div>
-            <span className="text-xs text-surface-500 w-10 text-right">
-              {Math.round(h.posterior * 100)}%
-            </span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
 
-// ─── Resultado final ──────────────────────────────────────
-function ResultCard({ result, onRestart }) {
-  if (!result || !result.riskLevel) {
+// ─── Resultado: visão de prevenção ─────────────────────────
+function ResultView({ view, onRestart }) {
+  if (!view?.nextStep) {
     return (
       <div className="glass p-8 text-center space-y-3">
         <Sparkles size={36} className="text-brand-700 mx-auto animate-pulse" />
@@ -341,80 +247,13 @@ function ResultCard({ result, onRestart }) {
       </div>
     );
   }
-
-  if (result.riskLevel === 'INCONCLUSIVE') {
-    return (
-      <div className="glass p-8 text-center space-y-4">
-        <HelpCircle size={40} className="text-surface-400 mx-auto" />
-        <p className="font-display font-semibold text-lg">Resultado inconclusivo</p>
-        <p className="text-surface-500 text-sm">
-          As respostas e os dados da pulseira não foram suficientes para um padrão claro.
-        </p>
-        <button onClick={onRestart} className="btn-ghost">Refazer triagem</button>
-      </div>
-    );
-  }
-
   return (
-    <div className="glass p-6 space-y-4">
-      <div className="text-center">
-        <CheckCircle size={36} className="text-green-600 mx-auto" />
-        <p className="font-display font-semibold text-lg mt-2">Triagem concluída</p>
-        <p className="text-surface-500 text-sm mt-1">
-          Risco: <span className={RISK_CLASS[result.riskLevel]}>{RISK_LABEL[result.riskLevel]}</span>
-          {result.score != null && (
-            <span className="ml-2 text-surface-400">confiança {result.score}%</span>
-          )}
-        </p>
-      </div>
+    <section className="space-y-4" aria-label="Resultado da triagem">
+      <NextStepCard step={view.nextStep} />
+      <VitalsList vitals={view.vitals} />
+      <ExamList items={view.screening} />
 
-      {result.ranking?.length > 0 && (
-        <div>
-          <p className="section-title mb-2">Top hipóteses</p>
-          <div className="space-y-2">
-            {result.ranking.slice(0, 3).map((h) => (
-              <div key={h.code} className="flex items-center gap-2">
-                <span className="text-sm text-surface-700 flex-1 truncate">{h.label}</span>
-                <div className="w-32 h-1.5 bg-surface-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-brand-500"
-                    style={{ width: `${Math.round(h.posterior * 100)}%` }} />
-                </div>
-                <span className="text-xs text-surface-500 w-10 text-right">
-                  {Math.round(h.posterior * 100)}%
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {result.scales && (
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <ScaleChip s={result.scales.stopBang}   label="STOP-BANG" />
-          <ScaleChip s={result.scales.phq9}       label="PHQ-9" />
-          <ScaleChip s={result.scales.findrisc}   label="FINDRISC" />
-          <ScaleChip s={result.scales.framingham} label="Framingham" />
-        </div>
-      )}
-
-      {result.suggestions?.length > 0 && (
-        <div className="space-y-1.5">
-          <p className="section-title">Recomendações</p>
-          {result.suggestions.map((s, i) => (
-            <div key={i} className="text-sm text-surface-700 flex items-start gap-2">
-              <span className={
-                s.type === 'warning' ? 'text-red-600' :
-                s.type === 'action'  ? 'text-amber-600' :
-                s.type === 'exam'    ? 'text-brand-600' :
-                'text-surface-400'
-              }>•</span>
-              <span>{s.text}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-3 pt-2">
+      <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
           <Coins size={18} className="text-amber-600 mx-auto" />
           <p className="font-display font-bold text-2xl text-amber-700 mt-1">+20</p>
@@ -423,57 +262,15 @@ function ResultCard({ result, onRestart }) {
         <Link to="/patient/goals" className="rounded-xl border border-brand-200 bg-brand-50 p-3 hover:bg-brand-100/50 text-center">
           <Target size={18} className="text-brand-700 mx-auto" />
           <p className="font-display font-bold text-2xl text-brand-700 mt-1">Metas</p>
-          <p className="text-[10px] uppercase tracking-wider text-brand-700/80">geradas →</p>
+          <p className="text-[10px] uppercase tracking-wider text-brand-700/80">ver as suas →</p>
         </Link>
       </div>
 
+      <Disclaimer audience="visitor" />
       <button onClick={onRestart} className="btn-ghost w-full justify-center">
         Nova triagem
       </button>
-    </div>
-  );
-}
-
-function ScaleChip({ s, label }) {
-  if (!s) return null;
-  return (
-    <div className="rounded-lg border border-surface-100 bg-surface-50 p-2">
-      <p className="text-[10px] uppercase tracking-wider text-surface-400">{label}</p>
-      <p className="text-sm font-semibold text-surface-800">
-        {s.score}{s.max ? `/${s.max}` : ''}{' '}
-        <span className="text-xs text-surface-500 font-normal">
-          ({s.severity || s.risk})
-        </span>
-      </p>
-    </div>
-  );
-}
-
-// ─── Red flag (interrupção emergencial) ────────────────────
-function RedFlagCard({ redFlag, onRestart }) {
-  const isEmergency = redFlag.urgency === 'EMERGENCY';
-  return (
-    <div className={`glass p-6 space-y-3 border-2 ${
-      isEmergency ? 'border-red-400 bg-red-50/40' : 'border-amber-400 bg-amber-50/40'
-    }`}>
-      <div className="flex items-center gap-2">
-        <AlertTriangle size={28} className={isEmergency ? 'text-red-600' : 'text-amber-600'} />
-        <div>
-          <p className={`font-display font-bold ${isEmergency ? 'text-red-700' : 'text-amber-700'}`}>
-            {isEmergency ? 'Sinal de emergência detectado' : 'Sinal de alerta urgente'}
-          </p>
-          <p className="text-sm text-surface-700">{redFlag.label}</p>
-        </div>
-      </div>
-      <div className={`rounded-lg p-3 ${isEmergency ? 'bg-red-100' : 'bg-amber-100'}`}>
-        <p className="text-sm font-semibold text-surface-800">
-          Ação recomendada: {redFlag.action}
-        </p>
-      </div>
-      <button onClick={onRestart} className="btn-ghost w-full justify-center">
-        Iniciar nova triagem
-      </button>
-    </div>
+    </section>
   );
 }
 
@@ -490,9 +287,9 @@ function History({ items }) {
             <p className="text-xs text-surface-500">
               {format(new Date(t.startedAt), 'dd MMM yyyy', { locale: ptBR })}
             </p>
-            {t.riskLevel
-              ? <span className={RISK_CLASS[t.riskLevel]}>{RISK_LABEL[t.riskLevel]}</span>
-              : <span className="text-xs text-surface-400">Processando</span>}
+            {t.nextStep
+              ? <span className={NEXT_STEP_BADGE[t.nextStep]}>{NEXT_STEP_LABEL[t.nextStep]}</span>
+              : <span className="text-xs text-surface-400">{t.status === 'COMPLETED' ? 'Concluída' : 'Em andamento'}</span>}
           </div>
         ))}
       </div>

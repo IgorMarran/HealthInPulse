@@ -90,8 +90,10 @@ export default function DoctorLayout() {
     navigate('/login');
   };
 
+  // 100dvh: no celular o 100vh (h-screen) é maior que a área visível e o
+  // topo com o menu saía da tela
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-[100dvh] overflow-hidden">
       {open && (
         <div className="fixed inset-0 z-20 bg-surface-900/30 lg:hidden" onClick={() => setOpen(false)} />
       )}
@@ -132,10 +134,10 @@ export default function DoctorLayout() {
         <div className="px-3 pb-4 border-t border-surface-200 pt-4">
           <div className="flex items-center gap-3 px-3 mb-3">
             <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 text-xs font-bold">
-              {user?.email?.[0]?.toUpperCase()}
+              {(user?.fullName || user?.username)?.[0]?.toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-surface-700 truncate">{user?.email}</p>
+              <p className="text-xs font-medium text-surface-700 truncate">{user?.fullName || user?.username}</p>
               <p className="text-[10px] text-surface-400">Médico</p>
             </div>
           </div>
@@ -147,7 +149,7 @@ export default function DoctorLayout() {
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="h-14 flex items-center px-4 border-b border-surface-200 bg-white/80 backdrop-blur shrink-0">
-          <button className="lg:hidden btn-ghost p-2" onClick={() => setOpen(true)}>
+          <button className="lg:hidden btn-ghost p-2" onClick={() => setOpen(true)} aria-label="Abrir menu">
             <Menu size={18} />
           </button>
         </header>

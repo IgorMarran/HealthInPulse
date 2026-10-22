@@ -1,5 +1,6 @@
 const prisma = require('../config/database');
-const { parsePatient, stringifyJson } = require('../utils/jsonField');
+const { parsePatient, parseExam, parseJson, stringifyJson } = require('../utils/jsonField');
+const patientView = require('./patientView');
 
 // ─── Perfil ──────────────────────────────────────────────────
 
@@ -7,7 +8,7 @@ const getProfile = async (userId) => {
   const patient = await prisma.patient.findUnique({
     where: { userId },
     include: {
-      user: { select: { email: true, emailVerified: true, createdAt: true } },
+      user: { select: { username: true, email: true, emailVerified: true, createdAt: true } },
     },
   });
   if (!patient) throw Object.assign(new Error('Paciente não encontrado'), { status: 404 });
@@ -18,7 +19,7 @@ const getById = async (patientId) => {
   const patient = await prisma.patient.findUnique({
     where: { id: patientId },
     include: {
-      user: { select: { email: true } },
+      user: { select: { username: true, email: true } },
     },
   });
   if (!patient) throw Object.assign(new Error('Paciente não encontrado'), { status: 404 });
@@ -116,7 +117,7 @@ const getDashboard = async (patientId) => {
       where:   { patientId },
       orderBy: { generatedAt: 'desc' },
       take: 3,
-      select: { id: true, type: true, riskLevel: true, generatedAt: true },
+      select: { id: true, type: true, generatedAt: true },
     }),
     prisma.appointment.findMany({
       where: {
@@ -146,10 +147,17 @@ const getDashboard = async (patientId) => {
       where:   { patientId },
       orderBy: { uploadedAt: 'desc' },
       take: 3,
-      include: { examResult: { select: { riskLevel: true } } },
+      include: { examResult: { select: { id: true, findings: true } } },
     }),
     prisma.notification.count({ where: { userId: { in: await getUserIdFromPatient(patientId) }, read: false } }),
   ]);
+
+  // Regra R2: exame sem nível de risco; triagem só com o próximo passo
+  const lastTriage = await prisma.triageAnswer.findFirst({
+    where:   { patientId, status: 'COMPLETED' },
+    orderBy: [{ finishedAt: 'desc' }, { startedAt: 'desc' }],
+  });
+  const lastState = lastTriage ? parseJson(lastTriage.answers, {}) : null;
 
   return {
     latestVitals,
@@ -157,8 +165,11 @@ const getDashboard = async (patientId) => {
     recentReports,
     upcomingAppointments,
     vitalsTrend,
-    recentExams,
+    recentExams: recentExams.map((e) => patientView.examForPatient(parseExam(e))),
     unreadNotifs,
+    triage: lastTriage
+      ? { pending: false, finishedAt: lastTriage.finishedAt, nextStep: patientView.nextStepFor(lastState?.result) }
+      : { pending: true, finishedAt: null, nextStep: null },
   };
 };
 

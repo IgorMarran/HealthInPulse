@@ -24,7 +24,7 @@ router.patch('/avatar', avatarUpload.single('avatar'), ctrl.updateAvatar);
 router.get('/dashboard', ctrl.getDashboard);
 
 // ─── Risco (câncer + crônicas, calculado na hora) ────────────
-router.get('/risk', ctrl.getRisk);
+// Sem GET /risk: o risco por doença é só da médica (regra R2)
 
 // ─── Sinais Vitais ───────────────────────────────────────────
 router.get('/vitals',        ctrl.getVitalSigns);
