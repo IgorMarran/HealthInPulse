@@ -49,7 +49,8 @@ export default function Tutorial({ steps, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="tour-title">
-      <div className="absolute inset-0 bg-surface-900/40" onClick={onClose} />
+      {/* Clicar no fundo (ou no item destacado) não fecha: só Pular, X e Esc */}
+      <div className="absolute inset-0 bg-surface-900/40" />
       {box && (
         <div
           className="absolute rounded-xl ring-4 ring-brand-300 bg-white/10 pointer-events-none transition-all duration-200"
