@@ -1,9 +1,18 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth, homeFor } from '@/contexts/AuthContext';
-import { Eye, EyeOff, Heart, ClipboardCheck } from 'lucide-react';
+import { Eye, EyeOff, Heart, ClipboardCheck, Activity, Sparkles, Stethoscope, UserRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { apiError } from '@/services/api';
+
+// Contas de demonstração do seed, uma por situação. O subtítulo não cita
+// doença (regra R2): o login é público e o paciente também vê esta tela.
+const DEMO_USERS = [
+  { id: 'roberto', label: 'Roberto Pereira',  sub: 'paciente · 63 anos, precisa investigar', icon: UserRound,   username: 'roberto', pass: 'Roberto@123' },
+  { id: 'joao',    label: 'João Mendes',      sub: 'paciente · caso grave',                  icon: Activity,    username: 'joao',    pass: 'Joao@123' },
+  { id: 'marina',  label: 'Marina Lima',      sub: 'paciente · preventivo',                  icon: Sparkles,    username: 'marina',  pass: 'Marina@123' },
+  { id: 'ana',     label: 'Dra. Ana Beatriz', sub: 'médica',                                 icon: Stethoscope, username: 'ana',     pass: 'Doctor@123' },
+];
 
 export default function LoginPage() {
   const { login }  = useAuth();
@@ -11,7 +20,7 @@ export default function LoginPage() {
   const location   = useLocation();
   const from       = location.state?.from?.pathname || null;
 
-  // Abre vazio: nenhum login é sugerido pelo app
+  // Abre vazio; os cards de demo abaixo preenchem e entram
   const [form, setForm]       = useState({ username: '', password: '' });
   const [show, setShow]       = useState(false);
   const [loading, setLoading] = useState(false);
@@ -19,12 +28,11 @@ export default function LoginPage() {
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!form.username || !form.password) return toast.error('Preencha usuário e senha');
+  const doLogin = async (username, password) => {
+    if (!username || !password) return toast.error('Preencha usuário e senha');
     setLoading(true);
     try {
-      const user = await login(form.username, form.password);
+      const user = await login(username, password);
       navigate(from || homeFor(user), { replace: true });
     } catch (err) {
       toast.error(apiError(err, 'Usuário ou senha inválidos'));
@@ -34,6 +42,14 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const submit = (e) => { e.preventDefault(); doLogin(form.username, form.password); };
+
+  // Card de demo entra direto
+  const loginAs = (u) => {
+    setForm({ username: u.username, password: u.pass });
+    doLogin(u.username, u.pass);
   };
 
   return (
@@ -90,6 +106,33 @@ export default function LoginPage() {
               {loading ? 'Entrando…' : 'Entrar'}
             </button>
           </form>
+
+          {/* Demo: clique entra direto */}
+          <div className="mt-6 pt-5 border-t border-surface-200">
+            <p className="text-[10px] uppercase tracking-widest text-surface-400 font-semibold mb-3">
+              Demo · clique para entrar
+            </p>
+            <div className="grid gap-2">
+              {DEMO_USERS.map((u) => (
+                <button
+                  type="button"
+                  key={u.id}
+                  onClick={() => loginAs(u)}
+                  disabled={loading}
+                  className="w-full text-left p-3 rounded-xl border border-surface-200 hover:border-brand-300 hover:bg-brand-50/40 transition-all flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group"
+                >
+                  <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-surface-100 text-surface-500 group-hover:bg-brand-100 group-hover:text-brand-700 transition-colors">
+                    <u.icon size={16} />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium text-surface-800">{u.label}</span>
+                    <span className="block text-[11px] text-surface-500">{u.sub}</span>
+                  </span>
+                  <span className="text-surface-300 group-hover:text-brand-600 transition-colors">→</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Teste rápido do stand: público, sem login */}
