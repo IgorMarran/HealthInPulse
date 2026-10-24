@@ -24,7 +24,7 @@ const SVG    = join(FEIRA, 'qr-teste.svg');
 const BANNER = join(FEIRA, 'banner.html');
 const PDF    = join(FEIRA, 'banner.pdf');
 
-const DEFAULT_URL = 'https://healthinpulse.onrender.com/teste';
+const DEFAULT_URL = 'https://healthinpulse-ib33.onrender.com/teste';
 
 const args = process.argv.slice(2);
 const wantPdf = args.includes('--pdf');

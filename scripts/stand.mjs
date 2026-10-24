@@ -32,7 +32,7 @@ const KEEP_DB    = flag('--keep-db');
 const SKIP_BUILD = flag('--skip-build');
 // No --check a porta padrão é outra: não colide com um stand já aberto
 const PORT = Number(option('--port') || process.env.STAND_PORT || (CHECK ? 3997 : 3000));
-const PUBLIC_URL = (process.env.STAND_PUBLIC_URL || 'https://healthinpulse.onrender.com').replace(/\/$/, '');
+const PUBLIC_URL = (process.env.STAND_PUBLIC_URL || 'https://healthinpulse-ib33.onrender.com').replace(/\/$/, '');
 
 const DOCTOR = { username: 'ana',     password: 'Doctor@123' };
 const ROBERTO = { username: 'roberto', password: 'Roberto@123' };
