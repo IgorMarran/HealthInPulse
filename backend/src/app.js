@@ -33,8 +33,12 @@ if (process.env.TRUST_PROXY) {
 
 // ─── segurança ───────────────────────────────────────────────
 app.use(helmet());
+// Sem CLIENT_URL em produção o frontend sai deste mesmo servidor (same-origin,
+// CORS não entra): não abrir para o localhost do Vite.
+const corsOrigin = process.env.CLIENT_URL
+  || (process.env.NODE_ENV === 'production' ? false : 'http://localhost:5173');
 app.use(cors({
-  origin:      process.env.CLIENT_URL || 'http://localhost:5173',
+  origin:      corsOrigin,
   credentials: true,
   methods:     ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }));

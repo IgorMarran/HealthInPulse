@@ -190,6 +190,28 @@ export default function QuickTest() {
   // ─── Topo da página a cada tela nova ───────────────────────
   useEffect(() => { window.scrollTo({ top: 0 }); }, [step, res]);
 
+  // ─── Botão "voltar" do navegador ───────────────────────────
+  // No celular o gesto de voltar é comum e tirava o visitante do /teste
+  // (perdia tudo). Ao sair da capa entra UMA entrada no histórico; o
+  // popstate recoloca a entrada e faz o "Voltar" da trilha. Na capa, o
+  // voltar segue normal (sai da página).
+  const backRef = useRef(null);
+  backRef.current = () => {
+    if (step === 'QUESTION') return back();
+    if (step === 'PROFILE' && profileStep > 0) { setError(null); setProfileStep((s) => s - 1); return undefined; }
+    return reset();
+  };
+  useEffect(() => {
+    if (step === 'COVER') return undefined;
+    if (!window.history.state?.trilha) window.history.pushState({ trilha: true }, '');
+    const onPop = () => {
+      if (!window.history.state?.trilha) window.history.pushState({ trilha: true }, '');
+      backRef.current?.();
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [step]);
+
   // ─── Modo quiosque: 120 s parado → capa ────────────────────
   useEffect(() => {
     if (!kiosk || step === 'COVER') return undefined;

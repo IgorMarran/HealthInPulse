@@ -80,6 +80,9 @@ export default function DoctorPatients() {
                 {p.fullName}
               </p>
               <div className="flex items-center gap-3 mt-0.5">
+                {p.isVisitor && (
+                  <span className="text-[10px] uppercase tracking-wide text-surface-500 bg-surface-100 rounded px-1.5 py-0.5">visitante</span>
+                )}
                 {p.dateOfBirth && (
                   <span className="text-xs text-surface-500">{calcAge(p.dateOfBirth)} anos</span>
                 )}

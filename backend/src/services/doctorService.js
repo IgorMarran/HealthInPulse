@@ -60,6 +60,7 @@ const getPatients = async (doctorId, { page = 1, limit = 20, search } = {}) => {
         id: true, fullName: true, dateOfBirth: true,
         gender: true, avatarUrl: true, bloodType: true,
         chronicConds: true,
+        user: { select: { username: true } },
       },
       orderBy: { fullName: 'asc' },
     }),
@@ -67,7 +68,14 @@ const getPatients = async (doctorId, { page = 1, limit = 20, search } = {}) => {
 
   return {
     total, page: p, limit: l,
-    patients: patients.map((p) => ({ ...p, chronicConds: parseJson(p.chronicConds, []) })),
+    // isVisitor: entrou só com o nome (feira). Um visitante pode digitar o nome
+    // de uma persona e a médica veria dois "Roberto" sem saber qual é qual.
+    patients: patients.map(({ user, ...p }) => ({
+      ...p,
+      username:     user?.username ?? null,
+      isVisitor:    Boolean(user?.username?.startsWith('visitante.')),
+      chronicConds: parseJson(p.chronicConds, []),
+    })),
   };
 };
 
