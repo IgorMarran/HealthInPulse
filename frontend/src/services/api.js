@@ -13,7 +13,7 @@ api.interceptors.request.use((config) => {
 });
 
 // Trata expiração do access token com refresh automático
-const AUTH_FORM_URLS = ['/auth/login', '/auth/register'];
+const AUTH_FORM_URLS = ['/auth/login', '/auth/register', '/auth/entrar', '/auth/entrar-medica'];
 let refreshing = false;
 let queue      = [];
 

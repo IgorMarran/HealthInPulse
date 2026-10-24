@@ -25,6 +25,29 @@ const register = async (req, res, next) => {
 };
 
 /**
+ * POST /auth/entrar  { name }  -> paciente visitante (sem senha)
+ */
+const enter = async (req, res, next) => {
+  try {
+    const fullName = String(req.body.name).trim().replace(/\s+/g, ' ').slice(0, 60);
+    res.status(201).json(await authService.guestEnter({ fullName }));
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /auth/entrar-medica  -> conta da médica de demonstração
+ */
+const enterDoctor = async (req, res, next) => {
+  try {
+    res.json(await authService.doctorEnter());
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
  * POST /auth/login
  */
 const login = async (req, res, next) => {
@@ -126,4 +149,4 @@ const me = async (req, res) => {
   });
 };
 
-module.exports = { register, login, refresh, logout, changePassword, tutorialSeen, me };
+module.exports = { enter, enterDoctor, register, login, refresh, logout, changePassword, tutorialSeen, me };

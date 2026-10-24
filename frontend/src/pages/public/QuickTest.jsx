@@ -1,6 +1,7 @@
 // ─── Teste rápido público (/teste) ──────────────────────────
 // O visitante do stand responde em 2–3 minutos, no notebook ou no
-// celular (QR). Fluxo: capa → perfil → uma pergunta por tela → resultado.
+// celular (QR). Fluxo: capa → perfil → uma pergunta por tela → resultado,
+// contado como a "Trilha do Pulso" (components/game/Trail.jsx).
 // A API é SEM ESTADO (POST /api/public/quick-test): a cada passo mandamos
 // o perfil e todas as respostas acumuladas; nada é gravado.
 //
@@ -25,17 +26,23 @@ import { PUBLIC_TEST_URL, KIOSK_IDLE_MS } from '@/config';
 import { isFieldVisible, visibleProfile } from '@/lib/conditions';
 import ProfileField from '@/components/triage/ProfileField';
 import QuestionCard from '@/components/triage/QuestionCard';
-import { NextStepCard, ExamList, HabitList } from '@/components/prevention/PreventionView';
+import { NextStepCard } from '@/components/prevention/PreventionView';
 import Disclaimer from '@/components/common/Disclaimer';
 import QrCode from '@/components/common/QrCode';
 import { PERSONAS } from './personas';
+import {
+  TrailHud, BadgeToast, TrailComplete, StationIntro, PROFILE_STATIONS, PROFILE_STEPS, pulseFor,
+} from '@/components/game/Trail';
+import { ScoreRing, WinList, MissionList, ExamMissions } from '@/components/game/MissionBoard';
+
+const PROFILE_KEYS = Object.keys(PROFILE_STATIONS);
 
 // Campos numéricos curtos dividem a linha; os de rótulo longo ocupam tudo
 const HALF_WIDTH = ['age', 'height', 'weight', 'packYears'];
 
 const CALL_TIMEOUT_MS = 20 * 1000;
 
-const QUICKTEST_DISCLAIMER = 'Teste educativo de prevenção, feito para a feira. Não é diagnóstico e não substitui '
+const QUICKTEST_DISCLAIMER = 'Teste educativo de prevenção. Não é diagnóstico e não substitui '
   + 'uma consulta: as recomendações vêm de livro de referência e diretrizes oficiais. Nada do que você respondeu foi gravado.';
 
 export default function QuickTest() {
@@ -51,6 +58,18 @@ export default function QuickTest() {
   const [busy, setBusy]       = useState(false);
   const [error, setError]     = useState(null);    // { message, fields }
   const [persona, setPersona] = useState(null);
+  // Trilha: estação do perfil (0..2), nome (só na tela, não vai à API),
+  // selos ganhos e o selo que está aparecendo agora
+  const [profileStep, setProfileStep] = useState(0);
+  const [name, setName]       = useState('');
+  const [earned, setEarned]   = useState([]);
+  const [toast, setToast]     = useState(null);
+  const clearToast = useCallback(() => setToast(null), []);
+  const award = useCallback((station) => {
+    if (!station) return;
+    setEarned((e) => (e.includes(station) ? e : [...e, station]));
+    setToast(station);
+  }, []);
 
   // Geração: cada reset invalida as respostas da API ainda a caminho
   // (ex.: o quiosque volta à capa enquanto uma chamada lenta termina).
@@ -62,6 +81,7 @@ export default function QuickTest() {
     abortRef.current?.abort();
     setStep('COVER'); setProfile({}); setAnswers({}); setOrder([]);
     setRes(null); setError(null); setPersona(null); setBusy(false);
+    setProfileStep(0); setName(''); setEarned([]); setToast(null);
   }, []);
 
   // Uma chamada à API. Devolve a resposta ou null (erro já mostrado).
@@ -77,7 +97,13 @@ export default function QuickTest() {
     try {
       const data = await publicApi.quickTest(body, { signal: ctrl.signal });
       if (gen !== genRef.current) return null;
-      setRes(data);
+      // Mudou de estação (ou terminou): ganha o selo da anterior
+      setRes((prev) => {
+        const was = prev?.stage === 'QUESTION' ? prev.question?.station : null;
+        const now = data.stage === 'QUESTION' ? data.question?.station : null;
+        if (was && was !== now) award(was);
+        return data;
+      });
       if (data.stage === 'PROFILE') setSchema(data.schema);
       setStep(data.stage);
       return data;
@@ -104,12 +130,14 @@ export default function QuickTest() {
   const start = async (p = null) => {
     setPersona(p);
     setProfile(p ? { ...p.profile } : {});
-    setAnswers({}); setOrder([]);
+    setAnswers({}); setOrder([]); setProfileStep(0); setEarned([]);
     if (schema) { setError(null); setStep('PROFILE'); return; }
     await call({});
   };
 
   const sendProfile = () => {
+    award(PROFILE_KEYS[PROFILE_KEYS.length - 1]);
+    if (persona) setEarned(PROFILE_KEYS);
     const prof = visibleProfile(schema, profile);
     const ans = persona ? { ...persona.answers } : {};
     setAnswers(ans);
@@ -130,8 +158,13 @@ export default function QuickTest() {
     }
   };
 
+  const nextProfileStep = () => {
+    award(PROFILE_KEYS[profileStep]);
+    setProfileStep((s) => s + 1);
+  };
+
   const back = async () => {
-    if (order.length === 0) { setError(null); setStep('PROFILE'); return; }
+    if (order.length === 0) { setError(null); setStep('PROFILE'); setProfileStep(PROFILE_STEPS - 1); return; }
     const last = order[order.length - 1];
     const next = { ...answers };
     for (const k of last) delete next[k];
@@ -165,7 +198,7 @@ export default function QuickTest() {
             <span className="font-display text-base font-bold tracking-tight">
               Health<span className="text-brand-600">InPulse</span>
             </span>
-            <span className="hidden sm:inline text-sm text-surface-500 ml-2">Teste rápido de risco de câncer</span>
+            <span className="hidden sm:inline text-sm text-surface-500 ml-2">Teste rápido de prevenção</span>
           </button>
           {step !== 'COVER' && (
             <button type="button" onClick={reset} className="btn-ghost text-xs px-3">
@@ -176,6 +209,17 @@ export default function QuickTest() {
       </header>
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 py-6 sm:py-10">
+        {(step === 'PROFILE' || step === 'QUESTION') && (
+          <div className="max-w-xl mx-auto mb-5">
+            <TrailHud
+              current={step === 'PROFILE' ? PROFILE_KEYS[profileStep] : res?.question?.station}
+              pulse={step === 'PROFILE'
+                ? pulseFor({ profileDone: profileStep, asked: 0, max: 18 })
+                : pulseFor({ profileDone: PROFILE_STEPS, asked: res?.progress?.asked ?? 0, max: res?.progress?.max ?? 0 })}
+            />
+          </div>
+        )}
+        <BadgeToast station={toast} onDone={clearToast} />
         {step === 'COVER' && (
           <Cover onStart={() => start()} onPersona={start} busy={busy} error={error} kiosk={kiosk} />
         )}
@@ -184,16 +228,21 @@ export default function QuickTest() {
           <ProfileStep
             schema={schema} profile={profile} setProfile={setProfile}
             persona={persona} busy={busy} error={error}
-            onSubmit={sendProfile} onBack={reset}
+            station={PROFILE_KEYS[profileStep]} last={profileStep === PROFILE_STEPS - 1}
+            name={name} setName={setName}
+            onNext={nextProfileStep} onSubmit={sendProfile}
+            onBack={profileStep === 0 ? reset : () => setProfileStep((s) => s - 1)}
           />
         )}
 
         {step === 'QUESTION' && res?.question && (
           <div className="max-w-xl mx-auto space-y-4 animate-fade-in">
             {persona && <PersonaNote persona={persona} />}
+            <StationIntro station={res.question.station} />
             <QuestionCard
+              key={res.question.id}
               question={res.question}
-              progress={res.progress}
+              progress={null}
               busy={busy}
               onAnswer={answer}
               onBack={back}
@@ -201,6 +250,9 @@ export default function QuickTest() {
               allowUnknown
               followUpMode="afterYes"
             />
+            <button type="button" onClick={back} disabled={busy} className="btn-ghost text-xs px-3 mx-auto flex">
+              <ArrowLeft size={13} /> Voltar
+            </button>
             {error && <ErrorBox error={error} />}
             <p className="text-xs text-surface-400 text-center">Nada do que você responde é gravado.</p>
           </div>
@@ -215,13 +267,13 @@ export default function QuickTest() {
         )}
 
         {step === 'RESULT' && res && (
-          <Result res={res} persona={persona} onRestart={reset} />
+          <Result res={res} persona={persona} name={name} earned={earned} age={profile.age} onRestart={reset} />
         )}
       </main>
 
       <footer className="border-t border-surface-200 bg-white">
         <div className="max-w-5xl mx-auto px-4 py-3">
-          <Disclaimer variant="inline" audience="visitor" text="Teste educativo de prevenção, feito para a feira. Não é diagnóstico e não substitui uma consulta. Nada do que você responde é gravado." />
+          <Disclaimer variant="inline" audience="visitor" text="Teste educativo de prevenção. Não é diagnóstico e não substitui uma consulta. Nada do que você responde é gravado." />
         </div>
       </footer>
     </div>
@@ -238,7 +290,7 @@ function Cover({ onStart, onPersona, busy, error, kiosk }) {
             Cuide da sua saúde antes que algo aconteça.
           </h1>
           <p className="text-surface-600 text-base sm:text-lg leading-relaxed max-w-prose">
-            Responda até 8 perguntas em 2 minutos. Você sai sabendo o próximo passo, quais exames preventivos
+            Percorra 8 estações em cerca de 3 minutos, ganhe selos pelo caminho. Você sai sabendo o próximo passo, quais exames preventivos
             valem para a sua idade e quais hábitos fazem diferença.
           </p>
           <ul className="grid gap-2 text-sm text-surface-700 sm:grid-cols-2">
@@ -291,22 +343,42 @@ function Cover({ onStart, onPersona, busy, error, kiosk }) {
   );
 }
 
-// ─── Perfil ──────────────────────────────────────────────────
-function ProfileStep({ schema, profile, setProfile, persona, busy, error, onSubmit, onBack }) {
-  const ready = profile.age != null && profile.age !== '' && profile.sex;
+// ─── Perfil: 3 estações da trilha ────────────────────────────
+const STATION_COPY = {
+  VOCE:    { title: 'Vamos começar', text: 'Seu nome fica só nesta tela. Idade e sexo ajustam as recomendações.' },
+  CORPO:   { title: 'Seu corpo', text: 'Altura e peso deixam a estimativa mais precisa. Pode pular se não souber.' },
+  HABITOS: { title: 'Hábitos e família', text: 'Responda o que souber. Nada aqui é gravado.' },
+};
+
+function ProfileStep({
+  schema, profile, setProfile, persona, busy, error, station, last, name, setName, onNext, onSubmit, onBack,
+}) {
+  const ids = PROFILE_STATIONS[station];
+  const fields = schema.filter((f) => ids.includes(f.id));
+  const ready = station !== 'VOCE' || (profile.age != null && profile.age !== '' && profile.sex);
+  const copy = STATION_COPY[station];
+  const submit = (e) => {
+    e.preventDefault();
+    if (!ready || busy) return;
+    if (persona || last) onSubmit(); else onNext();
+  };
   return (
-    <div className="max-w-xl mx-auto space-y-4 animate-fade-in">
+    <div className="max-w-xl mx-auto space-y-4 animate-fade-in" key={station}>
       {persona && <PersonaNote persona={persona} />}
-      <form className="glass p-5 sm:p-8 space-y-6"
-        onSubmit={(e) => { e.preventDefault(); if (ready && !busy) onSubmit(); }}>
+      <form className="glass p-5 sm:p-8 space-y-6" onSubmit={submit}>
         <div>
-          <h2 className="font-display text-xl sm:text-2xl font-semibold text-surface-900">Sobre você</h2>
-          <p className="text-sm text-surface-500 mt-1">
-            Só idade e sexo são obrigatórios. O resto deixa a estimativa mais precisa.
-          </p>
+          <h2 className="font-display text-xl sm:text-2xl font-semibold text-surface-900">{copy.title}</h2>
+          <p className="text-sm text-surface-500 mt-1">{copy.text}</p>
         </div>
         <div className="grid grid-cols-2 gap-x-3 gap-y-5">
-          {schema.map((field) => (
+          {station === 'VOCE' && (
+            <div className="col-span-2">
+              <label htmlFor="qt-name" className="text-[15px] text-surface-800 mb-1 block">Como podemos te chamar?</label>
+              <input id="qt-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={40}
+                className="input text-base py-3" placeholder="Seu primeiro nome (opcional)" autoComplete="off" />
+            </div>
+          )}
+          {fields.map((field) => (
             <ProfileField
               key={field.id}
               field={field}
@@ -326,7 +398,7 @@ function ProfileStep({ schema, profile, setProfile, persona, busy, error, onSubm
           <button type="button" onClick={onBack} className="btn-ghost"><ArrowLeft size={15} /> Voltar</button>
           <button type="submit" disabled={!ready || busy}
             className="btn-primary flex-1 justify-center py-3 text-base">
-            {busy ? 'Enviando…' : <>{persona ? 'Ver o resultado' : 'Continuar'} <ChevronRight size={17} /></>}
+            {busy ? 'Enviando…' : <>{persona ? 'Ver o resultado' : last ? 'Seguir a trilha' : 'Próxima estação'} <ChevronRight size={17} /></>}
           </button>
         </div>
       </form>
@@ -335,16 +407,36 @@ function ProfileStep({ schema, profile, setProfile, persona, busy, error, onSubm
 }
 
 // ─── Resultado ───────────────────────────────────────────────
-function Result({ res, persona, onRestart }) {
+function Result({ res, persona, name, earned, age, onRestart }) {
+  const [bonus, setBonus] = useState(0); // missões aceitas na tela
+  const urgent = res.redFlag || res.nextStep?.code === 'AGORA';
   return (
     <div className="space-y-6 animate-fade-in">
       {persona && <PersonaNote persona={persona} />}
+      {!urgent && <TrailComplete name={name.trim()} earned={earned} />}
 
       <NextStepCard step={res.nextStep} />
 
+      {res.score && (
+        <div className="glass p-5 flex items-center gap-5">
+          <ScoreRing earned={res.score.earned + bonus} total={res.score.total} />
+          <div className="min-w-0">
+            <p className="section-title">Seu placar de prevenção</p>
+            <p className="text-sm text-surface-700 mt-1">
+              {res.wins?.length ?? 0} {res.wins?.length === 1 ? 'hábito que você já tem' : 'hábitos que você já tem'}
+              {res.missions?.length ? ` e ${res.missions.length} ${res.missions.length === 1 ? 'missão' : 'missões'} para subir o placar.` : '. Placar cheio.'}
+            </p>
+            <p className="text-xs text-surface-500 mt-1">Pontos medem hábitos, montados a partir das suas respostas.</p>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-        <ExamList items={res.screening} />
-        <HabitList items={res.habits} />
+        <MissionList items={res.missions} onAccepted={setBonus} />
+        <div className="space-y-4">
+          <WinList items={res.wins} />
+          <ExamMissions items={res.screening} age={age} />
+        </div>
       </div>
 
       <Disclaimer audience="visitor" text={QUICKTEST_DISCLAIMER} />

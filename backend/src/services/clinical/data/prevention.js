@@ -78,6 +78,16 @@ const sources = [
 // Faixas normais dos sinais que o paciente vê ("como você está em relação
 // ao normal"). `field` é o campo do snapshot da pulseira
 // (wearableEvidence.collectFromDatabase).
+// Usada só pelo plano de prevenção do /teste (patientView.missionsFor)
+sources.push({
+  code: 'OMS_DIETA_2020',
+  short: 'OMS, alimentação saudável, 2020',
+  citation: 'World Health Organization. Healthy diet. Fact sheet. Geneva: WHO; 29 April 2020.',
+  url: 'https://www.who.int/news-room/fact-sheets/detail/healthy-diet',
+  year: 2020,
+  note: 'Pelo menos 400 g (cinco porções) de frutas e vegetais por dia.',
+});
+
 const normalRanges = [
   {
     code: 'FC_REPOUSO', label: 'Frequência cardíaca de repouso', unit: 'bpm',

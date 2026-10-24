@@ -34,6 +34,10 @@ services:
       # Na feira, deixe VAZIA: o visitante entra pelo QR sem digitar senha.
       - key: DEMO_PASSWORD
         sync: false
+      # Entrada sem senha (só nome / "Entrar como médica") desligada na internet:
+      # com true qualquer um com o link pegaria token de médica.
+      - key: DEMO_MODE
+        value: 'false'
       # Sala de aula sai por um IP só; 30 logins/15 min trava a apresentação
       - key: AUTH_RATE_LIMIT
         value: '300'

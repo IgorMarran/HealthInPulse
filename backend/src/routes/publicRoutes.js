@@ -33,7 +33,7 @@ const guard = [
 // lista explícita dentro de `profile`).
 const opt = (field) => body(field).optional({ values: 'falsy' });
 const ANSWER_CODE = /^[a-z0-9_]{1,64}$/;
-const ANSWER_VALUES = [true, false, 0, 1, 'sim', 'não', 'nao'];
+const ANSWER_VALUES = [true, false, 0, 1, 2, 3, 'sim', 'não', 'nao']; // 2 e 3: likert do PHQ-2
 
 const quickTestRules = checkExact([
   body('profile').optional({ values: 'null' }).isObject().withMessage('profile deve ser um objeto')
@@ -67,7 +67,7 @@ const quickTestRules = checkExact([
     }),
   // null = "não sei" (conta como respondida, não vira evidência)
   body('answers.*').custom((v) => v === null || ANSWER_VALUES.includes(v))
-    .withMessage('Resposta: true, false, 0, 1, "sim", "não" ou null'),
+    .withMessage('Resposta: true, false, 0 a 3, "sim", "não" ou null'),
 ], { message: 'Campo não permitido' });
 
 const runQuickTest = async (req, res, next) => {

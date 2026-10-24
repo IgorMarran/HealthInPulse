@@ -5,6 +5,9 @@ export { publicApi } from './publicApi';
 
 // ─── Auth ────────────────────────────────────────────────────
 export const authService = {
+  demoMode:       ()     => api.get('/auth/entrar'),
+  enter:          (name) => api.post('/auth/entrar', { name }),
+  enterDoctor:    ()     => api.post('/auth/entrar-medica'),
   login:          (data) => api.post('/auth/login', data),
   register:       (data) => api.post('/auth/register', data),
   logout:         ()     => api.post('/auth/logout', { refreshToken: localStorage.getItem('refreshToken') }),

@@ -6,6 +6,7 @@ const {
   generateRefreshToken,
   verifyRefreshToken,
 } = require('../config/jwt');
+const { DEMO_DOCTOR_USERNAME } = require('../config/demo');
 
 const SALT_ROUNDS = 12;
 
@@ -61,6 +62,81 @@ const register = async ({ username, password, fullName }) => {
     include: { patient: true },
   });
 
+  const tokens = await issueTokenPair(user);
+  return { user: sanitize(user), ...tokens };
+};
+
+// ─── entrada sem senha (feira) ──────────────────────────────
+// Visitante digita só o nome. Cria um paciente novo com esse nome e copia
+// os dados da Marina (paciente preventivo do seed): sinais, exames e metas.
+// Assim o dashboard já abre cheio e cada visitante tem a própria conta.
+// O passwordHash é aleatório: ninguém entra nessa conta por senha.
+
+const DEMO_TEMPLATE = 'marina';
+const strip = ({ id, patientId, ...rest }) => rest;
+
+const guestEnter = async ({ fullName }) => {
+  const doctors  = await prisma.doctor.findMany({ select: { id: true } });
+  const template = await prisma.user.findUnique({
+    where:   { username: DEMO_TEMPLATE },
+    include: { patient: { include: {
+      vitalSigns:  true,
+      exams:       { include: { examResult: true } },
+      goals:       true,
+    } } },
+  });
+  const tp = template?.patient;
+
+  const passwordHash = await bcrypt.hash(crypto.randomBytes(24).toString('hex'), 4);
+  const profile = tp ? (({ id, userId, fullName: _n, cpf, avatarUrl, healthCoins, createdAt, updatedAt,
+    vitalSigns, exams, goals, ...rest }) => rest)(tp) : {};
+
+  const user = await prisma.user.create({
+    data: {
+      username: `visitante.${crypto.randomBytes(6).toString('hex')}`,
+      passwordHash,
+      role: 'PATIENT',
+      patient: { create: {
+        ...profile,
+        fullName,
+        doctorLinks: { create: doctors.map((d) => ({ doctorId: d.id })) },
+      } },
+    },
+    include: { patient: true },
+  });
+  const patientId = user.patient.id;
+
+  if (tp) {
+    if (tp.vitalSigns.length)
+      await prisma.vitalSign.createMany({ data: tp.vitalSigns.map((v) => ({ ...strip(v), patientId })) });
+    if (tp.goals.length)
+      await prisma.healthGoal.createMany({ data: tp.goals.map((g) => ({ ...strip(g), patientId })) });
+    for (const e of tp.exams) {
+      const { examResult: result, ...exam } = e;
+      await prisma.exam.create({ data: {
+        ...strip(exam), patientId,
+        ...(result ? { examResult: { create: (({ id, examId, ...r }) => r)(result) } } : {}),
+      } });
+    }
+  }
+
+  await prisma.auditLog.create({
+    data: { userId: user.id, action: 'LOGIN', entity: 'User', entityId: user.id },
+  });
+  const tokens = await issueTokenPair(user);
+  return { user: sanitize(user), ...tokens };
+};
+
+// Médica: entra direto na conta médica de demonstração do seed (sem senha)
+const doctorEnter = async () => {
+  const user = await prisma.user.findUnique({
+    where:   { username: DEMO_DOCTOR_USERNAME },
+    include: { doctor: { select: { fullName: true } } },
+  });
+  if (!user || !user.isActive || user.role !== 'DOCTOR') throw Object.assign(new Error('Nenhuma médica cadastrada'), { status: 404 });
+  await prisma.auditLog.create({
+    data: { userId: user.id, action: 'LOGIN', entity: 'User', entityId: user.id },
+  });
   const tokens = await issueTokenPair(user);
   return { user: sanitize(user), ...tokens };
 };
@@ -155,4 +231,4 @@ const sanitize = (user) => {
   };
 };
 
-module.exports = { register, login, refresh, logout, changePassword, markTutorialSeen };
+module.exports = { guestEnter, doctorEnter, register, login, refresh, logout, changePassword, markTutorialSeen };

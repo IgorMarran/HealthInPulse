@@ -5,9 +5,13 @@
 //
 //   PROFILE   falta idade ou sexo: devolve o formulário do perfil
 //   BLOCKED   menor de 18 anos (o teste é para adultos)
-//   QUESTION  próxima pergunta do painel RAPIDO (questionRunner, até 8)
-//   RESULT    risco dos cânceres (riskEngine.assess), rastreamento e o
-//             que a pessoa pode mudar
+//   QUESTION  primeiro as perguntas fixas das crônicas com escore validado
+//             (CHRONIC_QUICK: STOP-Bang, PHQ-2, FINDRISC e um sinal de
+//             alarme), depois as do painel RAPIDO (questionRunner, até 6)
+//   RESULT    risco dos cânceres (riskEngine.assess), escores das crônicas
+//             (chronicScores.evaluate), rastreamento e o que dá para mudar
+//
+// Cada pergunta sai com `station` (a estação da trilha no /teste).
 //
 // Puro: recebe o kb (do banco ou do buildFromSeed) e o corpo já validado
 // no formato pela rota (publicRoutes). Aqui ficam as regras que dependem
@@ -16,13 +20,49 @@
 const riskEngine     = require('./clinical/riskEngine');
 const questionRunner = require('./clinical/questionRunner');
 const redFlags       = require('./clinical/redFlags');
-const { candidatesFor, demographicSchema } = require('./clinical/questions');
+const chronicScores  = require('./clinical/chronicScores');
+const { S } = require('./clinical/matrix');
+const { candidatesFor, demographicSchema, getQuestionForSymptom } = require('./clinical/questions');
 const { normalizeProfile } = require('./clinical/profile');
 
 const PANEL         = 'RAPIDO';
-const MAX_QUESTIONS = 8;
+const MAX_QUESTIONS = 6;  // do painel RAPIDO (cânceres)
 const MIN_AGE       = 18;
-const MAX_ANSWERS   = 30; // 8 perguntas + follow-ups, com folga
+const MAX_ANSWERS   = 40; // 12 crônicas + 6 RAPIDO + follow-ups, com folga
+
+// Crônicas no teste rápido: só itens dos escores validados (regra R1) e um
+// recorte deles para caber em ~3 minutos. Os escores saem parciais
+// (subestimam), o que é aceitável num teste educativo. O PHQ-9 completo
+// (com a pergunta de ideação) fica só na triagem com login.
+// `text` troca o enunciado da triagem por um sem nome de doença (regra R2).
+const CHRONIC_QUICK = [
+  { code: S.DOR_TORACICA_TIPICA, station: 'CORACAO',
+    text: 'Sente dor no peito que piora com esforço e melhora quando descansa?' },
+  { code: S.HAS_CONHECIDA,       station: 'CORACAO',
+    text: 'Algum médico já disse que a sua pressão é alta?' },
+  { code: S.RONCO_ALTO,          station: 'SONO' },
+  { code: S.APNEIA_OBSERVADA,    station: 'SONO' },
+  { code: S.FADIGA_DIURNA,       station: 'SONO' },
+  { code: S.PHQ9_ANEDONIA,       station: 'ANIMO',
+    text: 'Nas últimas 2 semanas, com que frequência teve pouco interesse ou prazer em fazer as coisas?' },
+  { code: S.PHQ9_HUMOR,          station: 'ANIMO',
+    text: 'Nas últimas 2 semanas, com que frequência se sentiu para baixo ou sem esperança?' },
+  { code: S.SEDENTARISMO,        station: 'ROTINA' },
+  { code: S.POUCAS_FRUTAS_VEG,   station: 'ROTINA' },
+  { code: S.CINTURA_AUMENTADA,   station: 'ROTINA',
+    text: 'Sua cintura passa de 94 cm (homem) ou 80 cm (mulher)?' },
+  { code: S.GLICEMIA_ALTERADA,   station: 'ROTINA',
+    text: 'Algum exame de sangue já mostrou açúcar (glicose) alto?' },
+  { code: S.HIST_FAM_DM,         station: 'ROTINA',
+    text: 'Pai, mãe, irmãos ou filhos tratam açúcar alto no sangue?' },
+];
+const CHRONIC_CODES = CHRONIC_QUICK.map(c => c.code);
+const ONCO_STATION  = 'SINAIS';
+
+const chronicQuestion = ({ code, station, text }) => {
+  const q = getQuestionForSymptom(code);
+  return { ...q, text: text ?? q.text, followUps: [], station };
+};
 
 // Campos do perfil que o teste usa (os que entram no prior dos cânceres)
 const PROFILE_FIELDS = [
@@ -31,7 +71,7 @@ const PROFILE_FIELDS = [
 ];
 const REQUIRED = ['age', 'sex'];
 
-const DISCLAIMER = 'Teste educativo de risco, feito para a feira. Não é diagnóstico e não substitui '
+const DISCLAIMER = 'Teste educativo de risco. Não é diagnóstico e não substitui '
   + 'uma consulta. As porcentagens são estimativas didáticas. Nada do que você respondeu foi gravado.';
 const BLOCKED_REASON = 'O teste rápido é para maiores de 18 anos. Converse com seus pais ou responsáveis '
   + 'e com um profissional de saúde se tiver dúvidas.';
@@ -44,7 +84,7 @@ const profileSchema = () => demographicSchema()
 
 // Perguntas do painel RAPIDO (ativas) e os follow-ups delas
 const allowedCodes = (kb) => {
-  const out = new Set();
+  const out = new Set(CHRONIC_CODES);
   for (const s of kb.symptoms) {
     if (s.active === false || s.kind !== 'QUESTION' || !(s.panels ?? []).includes(PANEL)) continue;
     out.add(s.code);
@@ -89,14 +129,24 @@ const run = (kb, { profile: rawProfile = {}, answers: rawAnswers = {} } = {}) =>
     visible.add(c.symptom);
     for (const fu of c.question.followUps ?? []) visible.add(fu.id);
   }
+  for (const c of CHRONIC_CODES) visible.add(c);
   const answers = pick(rawAnswers, [...visible]);
+  const has = (c) => Object.prototype.hasOwnProperty.call(answers, c);
 
   // ─── 3. Próxima pergunta (red flag encerra na hora) ───────────
   const flagged = redFlags.detectRedFlag({ answers });
   if (!flagged) {
+    const chronicDone = CHRONIC_QUICK.filter(c => has(c.code)).length;
+    const total = CHRONIC_QUICK.length + MAX_QUESTIONS;
+    const pending = CHRONIC_QUICK.find(c => !has(c.code));
+    if (pending) {
+      return { stage: 'QUESTION', question: chronicQuestion(pending), reason: null,
+        progress: { asked: chronicDone, max: total } };
+    }
     const next = questionRunner.next(kb, { profile, answers, panel: PANEL, max: MAX_QUESTIONS });
     if (next) {
-      return { stage: 'QUESTION', question: next.question, reason: next.reason, progress: next.progress };
+      return { stage: 'QUESTION', question: { ...next.question, station: ONCO_STATION }, reason: next.reason,
+        progress: { asked: chronicDone + next.progress.asked, max: total } };
     }
   }
 
@@ -115,6 +165,8 @@ const run = (kb, { profile: rawProfile = {}, answers: rawAnswers = {} } = {}) =>
     screening:       a.screening.filter(s => s.status !== 'FUTURO'),
     futureScreening: a.screening.filter(s => s.status === 'FUTURO'),
     modifiable:      a.modifiable,
+    chronic:         chronicScores.evaluate(answers, profile),
+    answers,
   };
 };
 
@@ -125,6 +177,7 @@ module.exports = {
   PANEL,
   MAX_QUESTIONS,
   MAX_ANSWERS,
+  CHRONIC_QUICK,
   MIN_AGE,
   PROFILE_FIELDS,
   DISCLAIMER,

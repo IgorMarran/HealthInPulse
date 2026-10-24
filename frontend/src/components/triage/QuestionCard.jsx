@@ -16,7 +16,19 @@
 //   onBack       mostra "Voltar" (opcional)
 import { useState, useEffect } from 'react';
 import clsx from 'clsx';
-import { ArrowLeft, Info } from 'lucide-react';
+import { ArrowLeft, Info, ThumbsUp, ThumbsDown, HelpCircle, Smile, Meh, Frown, CloudRain } from 'lucide-react';
+
+// Modo "lg" (trilha do /teste): botões com ícone e a escala do PHQ com
+// carinhas. Toque marca o botão por um instante antes de enviar, para a
+// pessoa ver o que escolheu.
+const PICK_DELAY_MS = 180;
+const BOOL_ICON  = { 1: ThumbsUp, 0: ThumbsDown, null: HelpCircle };
+const LIKERT_UI  = [
+  { icon: Smile,     cls: 'border-green-300 bg-green-50 text-green-800' },
+  { icon: Meh,       cls: 'border-lime-300 bg-lime-50 text-lime-800' },
+  { icon: Frown,     cls: 'border-amber-300 bg-amber-50 text-amber-800' },
+  { icon: CloudRain, cls: 'border-orange-300 bg-orange-50 text-orange-800' },
+];
 
 export default function QuestionCard({
   question: q, progress, explanation: exp, reason, busy, onAnswer,
@@ -24,8 +36,15 @@ export default function QuestionCard({
 }) {
   const [followUps, setFollowUps] = useState({});
   const [saidYes, setSaidYes]     = useState(false);
+  const [picked, setPicked]       = useState(undefined); // valor tocado, até enviar
 
-  useEffect(() => { setFollowUps({}); setSaidYes(false); }, [q?.id]);
+  useEffect(() => { setFollowUps({}); setSaidYes(false); setPicked(undefined); }, [q?.id]);
+
+  const pick = (value, send) => {
+    if (busy || picked !== undefined) return;
+    setPicked(value);
+    setTimeout(() => { setPicked(undefined); send(value); }, PICK_DELAY_MS);
+  };
 
   if (!q) return null;
   const lg = size === 'lg';
@@ -87,37 +106,54 @@ export default function QuestionCard({
         {/* Sim / Não (/ Não sei) */}
         {q.type === 'boolean' && (
           <div className={clsx(lg ? 'grid gap-3 pt-2' : 'flex gap-3', lg && (allowUnknown ? 'grid-cols-3' : 'grid-cols-2'))}>
-            {mainOptions.map((o) => (
-              <button key={o.l} type="button"
-                onClick={() => triggerSubmit(o.v)}
-                disabled={busy}
-                aria-pressed={o.v === 1 && saidYes}
-                className={clsx(
-                  'rounded-xl font-medium border transition-colors duration-150 disabled:opacity-50',
-                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500/40',
-                  lg ? 'py-4 text-lg' : 'flex-1 py-2.5 text-sm',
-                  o.v === 1 && saidYes
-                    ? 'bg-brand-100 border-brand-500 text-brand-700'
-                    : 'border-surface-200 hover:bg-brand-50 hover:border-brand-400',
-                  o.v === null && 'text-surface-500',
-                )}>
-                {o.l}
-              </button>
-            ))}
+            {mainOptions.map((o) => {
+              const Icon = BOOL_ICON[o.v];
+              const active = (o.v === 1 && saidYes) || picked === o.v;
+              return (
+                <button key={o.l} type="button"
+                  onClick={() => (lg ? pick(o.v, triggerSubmit) : triggerSubmit(o.v))}
+                  disabled={busy}
+                  aria-pressed={active}
+                  className={clsx(
+                    'rounded-xl font-medium border transition-all duration-150 disabled:opacity-50',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500/40',
+                    lg ? 'py-4 text-lg flex flex-col items-center gap-1.5 active:scale-95' : 'flex-1 py-2.5 text-sm',
+                    active
+                      ? 'bg-brand-100 border-brand-500 text-brand-700 scale-[1.03]'
+                      : 'border-surface-200 hover:bg-brand-50 hover:border-brand-400',
+                    o.v === null && !active && 'text-surface-500',
+                  )}>
+                  {lg && <Icon size={26} aria-hidden strokeWidth={1.75} />}
+                  {o.l}
+                </button>
+              );
+            })}
           </div>
         )}
 
         {/* Likert 0-3 */}
         {q.type === 'likert' && (
-          <div className="grid grid-cols-2 gap-2">
-            {q.options.map((o) => (
-              <button key={o.value} type="button"
-                onClick={() => onAnswer(o.value)}
-                disabled={busy}
-                className="py-2.5 rounded-xl text-sm border border-surface-200 hover:bg-brand-50 hover:border-brand-400 text-left px-3">
-                <span className="text-xs text-surface-400 mr-1">{o.value}</span> {o.label}
-              </button>
-            ))}
+          <div className={clsx('grid gap-2', lg ? 'grid-cols-2 sm:grid-cols-4 pt-2' : 'grid-cols-2')}>
+            {q.options.map((o, i) => {
+              const ui = LIKERT_UI[Math.min(i, LIKERT_UI.length - 1)];
+              const Icon = ui.icon;
+              const active = picked === o.value;
+              return (
+                <button key={o.value} type="button"
+                  onClick={() => (lg ? pick(o.value, onAnswer) : onAnswer(o.value))}
+                  disabled={busy}
+                  aria-pressed={active}
+                  className={clsx(
+                    'rounded-xl border transition-all duration-150 disabled:opacity-50',
+                    lg
+                      ? clsx('py-4 px-2 flex flex-col items-center gap-1.5 text-sm font-medium active:scale-95', active ? clsx(ui.cls, 'scale-[1.03]') : 'border-surface-200 hover:border-brand-400 hover:bg-brand-50')
+                      : 'py-2.5 text-sm border-surface-200 hover:bg-brand-50 hover:border-brand-400 text-left px-3',
+                  )}>
+                  {lg ? <Icon size={28} aria-hidden strokeWidth={1.75} /> : <span className="text-xs text-surface-400 mr-1">{o.value}</span>}
+                  {o.label}
+                </button>
+              );
+            })}
           </div>
         )}
 
