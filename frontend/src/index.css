@@ -115,3 +115,8 @@
     animation: pulseRing 2s cubic-bezier(0.4,0,0.6,1) infinite;
   }
 }
+
+/* Trilha do Pulso: sem animação para quem pediu menos movimento */
+@media (prefers-reduced-motion: reduce) {
+  .animate-heartbeat, .animate-badge-pop { animation: none !important; }
+}

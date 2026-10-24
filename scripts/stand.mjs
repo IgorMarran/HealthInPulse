@@ -51,6 +51,7 @@ function buildEnv(fileEnv) {
     PORT: String(PORT),
     AUTH_RATE_LIMIT: '1000',    // a equipe e os visitantes saem por um IP só
     KB_EDIT: 'true',            // a demo da Base da IA precisa editar
+    DEMO_MODE: 'true',          // feira: entrar só com o nome, sem senha
     OPENAI_API_KEY: '',         // offline: sempre o simulador local
     CHECKPOINT_DISABLE: '1',    // o Prisma não consulta versão nova na rede
   });

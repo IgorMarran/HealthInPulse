@@ -165,3 +165,24 @@ test('cadastro: paciente novo entra só com usuário, nome e senha e fica ligado
   );
   await assert.rejects(authService.login({ username: 'visitante.novo', password: 'errada' }), (e) => e.status === 401);
 });
+
+test('feira: entrar só com o nome cria paciente com dados de exemplo e ligado à médica', async () => {
+  const authService = require('../src/services/authService');
+  const out = await authService.guestEnter({ fullName: 'Visitante da Feira' });
+  assert.ok(out.accessToken && out.refreshToken);
+  assert.equal(out.user.role, 'PATIENT');
+  assert.equal(out.user.fullName, 'Visitante da Feira');
+  assert.equal(out.user.passwordHash, undefined);
+  const p = await prisma.patient.findFirst({
+    where: { userId: out.user.id },
+    include: { doctorLinks: true, _count: { select: { vitalSigns: true, exams: true, goals: true } } },
+  });
+  assert.ok(p.doctorLinks.length >= 1, 'visitante sem médica');
+  assert.ok(p._count.vitalSigns > 0 && p._count.exams > 0, 'dashboard do visitante ficaria vazio');
+  const outro = await authService.guestEnter({ fullName: 'Visitante da Feira' });
+  assert.notEqual(outro.user.id, out.user.id, 'dois visitantes com o mesmo nome dividiram a conta');
+
+  const med = await authService.doctorEnter();
+  assert.equal(med.user.role, 'DOCTOR');
+  assert.equal(med.user.username, 'ana', 'entrou em outra médica, não na de demonstração');
+});

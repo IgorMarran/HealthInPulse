@@ -193,6 +193,8 @@ banca, o checklist, os slides e o banner estão em [`Docs/feira/`](./Docs/feira/
 Os números clínicos e suas fontes estão em
 [`Docs/base-clinica-oncologia.md`](./Docs/base-clinica-oncologia.md).
 
+`DEMO_MODE=true` (no `backend/.env` de dev e ligado pelo `npm run stand`) troca o login por "Seu nome + Entrar" e "Entrar como médica", sem senha; ausente/false (Render, produção) as rotas sem senha dão 404 e vale o login com usuário e senha.
+
 **Notebook do stand (Windows, offline).** Um comando faz tudo:
 
 ```bash

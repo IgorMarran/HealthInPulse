@@ -38,6 +38,17 @@ export function AuthProvider({ children }) {
     return startSession(data);
   }, [startSession]);
 
+  // Feira: entra só com o nome (paciente) ou direto como médica
+  const enter = useCallback(async (name) => {
+    const { data } = await authService.enter(name);
+    return startSession(data);
+  }, [startSession]);
+
+  const enterDoctor = useCallback(async () => {
+    const { data } = await authService.enterDoctor();
+    return startSession(data);
+  }, [startSession]);
+
   const register = useCallback(async (form) => {
     const { data } = await authService.register(form);
     return startSession(data);
@@ -70,7 +81,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, login, register, logout, refreshCoins, markTutorialSeen, isPatient, isDoctor,
+      user, loading, login, enter, enterDoctor, register, logout, refreshCoins, markTutorialSeen, isPatient, isDoctor,
     }}>
       {children}
     </AuthContext.Provider>

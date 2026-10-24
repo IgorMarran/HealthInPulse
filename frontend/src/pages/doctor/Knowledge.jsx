@@ -275,7 +275,7 @@ export default function Knowledge() {
         <div className="glass p-3 flex items-center gap-3 flex-wrap">
           <label htmlFor="kb-note" className="text-xs text-surface-500 shrink-0">Motivo da edição (opcional, vai para o histórico):</label>
           <input id="kb-note" value={changeNote} onChange={(e) => setChangeNote(e.target.value)} maxLength={500}
-            placeholder="ex.: demonstração na feira" className="input flex-1 min-w-[12rem] py-1.5 text-sm" />
+            placeholder="ex.: ajuste de limiar" className="input flex-1 min-w-[12rem] py-1.5 text-sm" />
           <span className="text-xs text-surface-400">Clique num valor sublinhado para editar · Enter salva · Esc cancela</span>
         </div>
       )}

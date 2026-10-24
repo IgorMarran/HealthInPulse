@@ -183,7 +183,75 @@ const habitsFor = (profile) => goalTemplates
     return { code: t.code, title: g.title, text: g.description, source: sourceShort[t.sourceCode] ?? null };
   });
 
-const VISITOR_DISCLAIMER = 'Teste educativo de prevenção, feito para a feira. Não é diagnóstico e não '
+// ─── Plano de prevenção do /teste ───────────────────────────────────
+// Lê as respostas da trilha e devolve o que a pessoa JÁ faz bem (wins) e
+// as missões. Cada item nasce de uma resposta ou do perfil, não da idade
+// sozinha. Pontos = gamificação de hábito, nunca de risco (regra R2).
+const yes = (a, k) => a?.[k] === true || a?.[k] === 1 || a?.[k] === 'sim';
+const likert = (a, k) => Number(a?.[k]) || 0;
+
+const missionsFor = (profile, answers = {}, chronic = null) => {
+  const wins = [], missions = [];
+  const win  = (code, title, text, sourceCode = null) => wins.push({ code, title, text, source: sourceShort[sourceCode] ?? null, points: 10 });
+  const todo = (code, title, text, points, sourceCode = null) => missions.push({ code, title, text, points, source: sourceShort[sourceCode] ?? null });
+  const answered = (k) => answers[k] !== undefined && answers[k] !== null;
+
+  // Movimento
+  if (answered('sedentarismo')) {
+    if (yes(answers, 'sedentarismo')) todo('ATIVIDADE_150', 'Sair do sedentarismo', 'Comece com 30 minutos de caminhada rápida, 5 dias na semana. A meta é 150 minutos por semana.', 30, 'OMS_ATIVIDADE_2020');
+    else win('ATIVIDADE_150', 'Você se mexe', 'Já passa de 30 minutos por dia. Mantenha os 150 minutos por semana.', 'OMS_ATIVIDADE_2020');
+  }
+  // Prato
+  if (answered('baixo_consumo_frutas_vegetais')) {
+    if (yes(answers, 'baixo_consumo_frutas_vegetais')) todo('FRUTAS_400', 'Fruta ou vegetal em toda refeição', 'A meta é 400 g por dia, cerca de 5 porções. Uma fruta no café da manhã já é a primeira.', 20, 'OMS_DIETA_2020');
+    else win('FRUTAS_400', 'Prato colorido', 'Frutas e vegetais todo dia: é o que a OMS recomenda.', 'OMS_DIETA_2020');
+  }
+  // Fumo
+  if (profile.smoker === true && !(profile.quitYears > 0)) todo('PARAR_DE_FUMAR', 'Parar de fumar', 'O SUS oferece tratamento gratuito: 4 sessões iniciais, de preferência semanais.', 40, 'MS_PCDT_TABAGISMO_2020');
+  else if (profile.smoker === true) win('EX_FUMANTE', `Parou de fumar há ${profile.quitYears} ${profile.quitYears === 1 ? 'ano' : 'anos'}`, 'Cada ano sem cigarro conta.', 'MS_PCDT_TABAGISMO_2020');
+  else if (profile.smoker === false) win('NAO_FUMA', 'Longe do cigarro', 'Não fumar é o hábito que mais protege.', 'MS_PCDT_TABAGISMO_2020');
+  // Álcool
+  const doses = Number(profile.alcoholDosesWeek);
+  if (doses > 0) todo('REDUZIR_ALCOOL', `Menos que ${doses} ${doses === 1 ? 'dose' : 'doses'} por semana`, 'Troque uma das doses da semana por algo sem álcool. Não existe quantidade sem efeito na saúde.', 20, 'OMS_ALCOOL_2023');
+  else if (profile.alcoholDosesWeek != null) win('SEM_ALCOOL', 'Semana sem álcool', 'Nenhuma quantidade de álcool é livre de efeito. Você já está no melhor lugar.', 'OMS_ALCOOL_2023');
+  // Peso
+  if (profile.bmi != null && profile.height) {
+    const h = profile.height > 3 ? profile.height / 100 : profile.height;
+    if (profile.bmi >= 25) todo('IMC_NORMAL', `Chegar a ${Math.floor(24.9 * h * h)} kg`, 'Peso em que o IMC entra na faixa normal (18,5 a 24,9).', 30, 'OMS_IMC_2000');
+    else if (profile.bmi >= 18.5) win('IMC_NORMAL', 'Peso na faixa normal', 'IMC entre 18,5 e 24,9.', 'OMS_IMC_2000');
+  }
+  // Sono
+  const sleep = ['ronco_alto', 'apneia_observada', 'fadiga_diurna'];
+  if (sleep.some(answered)) {
+    if (sleep.some(k => yes(answers, k))) todo('SONO', 'Conversar sobre o sono na consulta', 'Ronco alto, pausas na respiração ou sono durante o dia têm tratamento. Conte isso ao médico.', 20);
+    else win('SONO', 'Sono que descansa', 'Sem ronco alto, sem pausas e sem sono de dia.');
+  }
+  // Ânimo (PHQ-2)
+  if (answered('phq9_anedonia') || answered('phq9_humor_deprimido')) {
+    const phq2 = likert(answers, 'phq9_anedonia') + likert(answers, 'phq9_humor_deprimido');
+    if (phq2 >= 3) todo('ANIMO', 'Falar sobre o ânimo com alguém de confiança', 'Duas semanas assim merecem atenção. Vale levar isso à consulta.', 20);
+    else if (phq2 > 0) todo('ANIMO_LEVE', 'Reservar tempo para o que te dá prazer', 'Alguns dias para baixo acontecem. Guarde um momento da semana só para você.', 10);
+    else win('ANIMO', 'Ânimo em dia', 'Interesse e humor preservados nas últimas 2 semanas.');
+  }
+  // Pressão e açúcar: vigiar no check-up
+  if (yes(answers, 'has_conhecida')) todo('PRESSAO', 'Medir a pressão com regularidade', 'Em casa, a meta é ficar abaixo de 130 por 80. Anote e leve ao médico.', 20, 'SBC_HAS_2025');
+  if (yes(answers, 'historico_glicemia_alterada') || yes(answers, 'historico_familiar_dm2') || yes(answers, 'circunferencia_abdominal_aumentada')) {
+    todo('GLICOSE', 'Conferir a glicose no próximo check-up', 'Peça o exame de sangue em jejum na consulta de rotina.', 20);
+  }
+  if (yes(answers, 'dor_toracica_tipica')) todo('DOR_PEITO', 'Contar a dor no peito ao médico', 'Dor que vem com esforço e passa no descanso precisa de avaliação. Não espere o próximo check-up.', 30);
+
+  const earned = wins.length * 10;
+  const total  = earned + missions.reduce((s, m) => s + m.points, 0);
+  return { wins, missions, score: { earned, total } };
+};
+
+// Exames futuros só quando faltam até 10 anos: aos 24, o exame dos 50
+// não ajuda em nada
+const NEAR_FUTURE_YEARS = 10;
+const nearScreening = (items, age) => items.filter(s =>
+  s.status !== 'FUTURO' || ((s.startAge ?? s.minAge ?? Infinity) - age) <= NEAR_FUTURE_YEARS);
+
+const VISITOR_DISCLAIMER = 'Teste educativo de prevenção. Não é diagnóstico e não '
   + 'substitui uma consulta. Nada do que você respondeu foi gravado.';
 
 // Teste público (/teste): saída do quickTestService.run → visitante
@@ -192,21 +260,24 @@ const quickTestForVisitor = (r, rawProfile = {}) => {
   if (r.stage === 'QUESTION') return { stage: r.stage, question: r.question, progress: r.progress };
   if (r.stage !== 'RESULT') return { ...r, disclaimer: VISITOR_DISCLAIMER };
   const result = {
-    riskLevel: 'LOW',
+    riskLevel: r.chronic?.riskLevel ?? 'LOW',
     redFlag:   r.redFlag ?? null,
     oncology:  { conditions: r.oncology?.conditions ?? [], screening: r.screening ?? [] },
   };
+  const profile = normalizeProfile(rawProfile);
+  const plan = missionsFor(profile, r.answers ?? {}, r.chronic);
   return {
     stage:      'RESULT',
     disclaimer: VISITOR_DISCLAIMER,
     nextStep:   nextStepFor(result),
-    screening:  screeningForPatient([...(r.screening ?? []), ...(r.futureScreening ?? [])]),
-    habits:     habitsFor(normalizeProfile(rawProfile)),
+    screening:  screeningForPatient(nearScreening([...(r.screening ?? []), ...(r.futureScreening ?? [])], profile.age)),
+    habits:     habitsFor(profile),
+    ...plan,
   };
 };
 
 module.exports = {
-  quickTestForVisitor, habitsFor,
+  quickTestForVisitor, habitsFor, missionsFor,
   examForPatient,
   STEP, nextStepFor, vitalsVsNormal, screeningForPatient, triageResultView,
   wearableLines, triageResponse, triageHistoryItem, reportForPatient,

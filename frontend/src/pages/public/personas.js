@@ -10,7 +10,19 @@
 //            "não sei": um "não" derrubaria a ATENÇÃO (LR−).
 //   Carlos:  ex-fumante, tosse há 3 semanas e sangue no catarro → pulmão
 //            INVESTIGAR (~6 em 100).
-// Respostas: true = sim, false = não, null = não sei.
+// Respostas: true = sim, false = não, null = não sei. As crônicas
+// (CHRONIC_QUICK do quickTestService) entram por `chronic({...})`.
+
+// Todas as perguntas crônicas do teste rápido; o que não vier é "não"
+const chronic = (over = {}) => ({
+  dor_toracica_tipica: false, has_conhecida: false,
+  ronco_alto: false, apneia_observada: false, fadiga_diurna: false,
+  phq9_anedonia: 0, phq9_humor_deprimido: 0,
+  sedentarismo: false, baixo_consumo_frutas_vegetais: false,
+  circunferencia_abdominal_aumentada: false, historico_glicemia_alterada: false,
+  historico_familiar_dm2: false,
+  ...over,
+});
 
 export const PERSONAS = [
   {
@@ -23,6 +35,7 @@ export const PERSONAS = [
       alcoholDosesWeek: 4, familyHistoryCancer: [],
     },
     answers: {
+      ...chronic({ fadiga_diurna: true, has_conhecida: true, sedentarismo: true }),
       perda_peso_inexplicada: true, sudorese_noturna: false,
       mudanca_habito_intestinal: true, sangramento_retal: false,
       tosse_persistente_3sem: false, hemoptise: false,
@@ -32,13 +45,14 @@ export const PERSONAS = [
   {
     id: 'helena',
     name: 'Helena, 47',
-    summary: 'Mãe teve câncer de mama, preventivo atrasado',
+    summary: 'Caso na família, preventivo atrasado',
     profile: {
       age: 47, sex: 'female', height: 165, weight: 70,
       smoker: false, alcoholDosesWeek: 2,
       familyHistoryCancer: ['mama'], papEmDia: false,
     },
     answers: {
+      ...chronic({ ronco_alto: true, baixo_consumo_frutas_vegetais: true, phq9_anedonia: 1 }),
       perda_peso_inexplicada: false, mudanca_habito_intestinal: false,
       sangramento_retal: false, tosse_persistente_3sem: false, hemoptise: false,
       nodulo_mama: null, sangramento_pos_coito: null,
@@ -54,6 +68,7 @@ export const PERSONAS = [
       alcoholDosesWeek: 7, familyHistoryCancer: [],
     },
     answers: {
+      ...chronic({ ronco_alto: true, apneia_observada: true, fadiga_diurna: true }),
       perda_peso_inexplicada: false, mudanca_habito_intestinal: false,
       sangramento_retal: false, tosse_persistente_3sem: true, hemoptise: true,
       sintomas_urinarios_baixos: false,

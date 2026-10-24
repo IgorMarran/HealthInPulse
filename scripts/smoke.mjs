@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Teste de fumaça: sobe o backend de verdade e confere o caminho feliz.
 // Roda no CI (Windows, macOS, Linux) e serve para conferir uma máquina nova.
-// Confere login das personas, o teste rápido público, o painel de risco
+// Confere a entrada só com nome (visitante e médica), o teste rápido público, o painel de risco
 // da médica (Roberto em INVESTIGAR, Marina em ATENÇÃO, João em ROTINA), a
 // Base da IA e o frontend (incluindo /teste). Os dados vêm do seed: num
 // banco mexido, `npm run db:reset` volta à história da feira.
@@ -25,12 +25,8 @@ const TIMEOUT_MS = urlArg ? 120_000 : 30_000; // deploy grátis pode estar "dorm
 const DEMO_PASSWORD = process.argv.find((a) => a.startsWith('--demo-password='))
   ?.slice('--demo-password='.length);
 
-const DEMO_USERS = [
-  { username: 'joao',    password: 'Joao@123',    dashboard: '/api/patient/dashboard' },
-  { username: 'marina',  password: 'Marina@123',  dashboard: '/api/patient/dashboard' },
-  { username: 'roberto', password: 'Roberto@123', dashboard: '/api/patient/dashboard' },
-  { username: 'ana',     password: 'Doctor@123',  dashboard: '/api/doctor/dashboard' },
-];
+// Feira: entra-se só com o nome (paciente visitante) ou direto como médica
+const GUEST_NAME  = 'Visitante Smoke';
 const DOCTOR_USER = 'ana';
 
 // O que a médica vê de cada persona no painel de risco (seed da feira)
@@ -41,7 +37,7 @@ const PERSONAS = [
 ];
 
 let failures = 0;
-const tokens = {}; // e-mail → accessToken, depois do login
+const tokens = {}; // usuário → accessToken, depois de entrar
 let finished = false;
 let gateCookie = null; // cookie do portão da demo, depois da senha certa
 
@@ -95,7 +91,7 @@ function startBackend() {
   const child = spawn(process.execPath, ['src/server.js'], {
     cwd: BACKEND,
     env: {
-      ...process.env, PORT, NODE_ENV: 'test', LOG_LEVEL: 'warn',
+      ...process.env, PORT, NODE_ENV: 'test', LOG_LEVEL: 'warn', DEMO_MODE: process.env.SMOKE_DEMO_MODE ?? 'true',
       ...(DEMO_PASSWORD && { DEMO_PASSWORD }),
     },
     stdio: ['ignore', 'inherit', 'inherit'],
@@ -119,10 +115,10 @@ async function checkDemoGate() {
     assert(page.status === 302, `página respondeu ${page.status}`);
     assert(page.headers.get('location')?.startsWith('/demo-access'), `redirect para ${page.headers.get('location')}`);
 
-    const api = await http(`${BASE}/api/auth/login`, {
+    const api = await http(`${BASE}/api/auth/entrar`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({ username: DEMO_USERS[0].username, password: DEMO_USERS[0].password }),
+      body: JSON.stringify({ name: GUEST_NAME }),
     });
     assert(api.status === 401, `login sem passar pelo portão respondeu ${api.status}`);
   });
@@ -169,7 +165,7 @@ async function checkQuickTest() {
     const profile = { age: 63, sex: 'male', height: 175, weight: 80, smoker: true, packYears: 35, quitYears: 8 };
     const answers = {};
     let res;
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 30; i++) {
       res = await api('/api/public/quick-test', { method: 'POST', body: { profile, answers } });
       if (res.stage !== 'QUESTION') break;
       answers[res.question.id] = false;
@@ -230,23 +226,48 @@ async function main() {
 
     if (DEMO_PASSWORD) await checkDemoGate();
 
-    for (const user of DEMO_USERS) {
-      await check(`login + dashboard (${user.username})`, async () => {
-        const login = await http(`${BASE}/api/auth/login`, {
+    // DEMO_MODE: o smoke local liga; num --url sem a flag as rotas sem senha
+    // dão 404 e o login da médica vai por usuário e senha (seed).
+    const demoMode = (await http(`${BASE}/api/auth/entrar`)).status === 204;
+    if (demoMode) {
+      await check('entrar só com o nome + dashboard do paciente', async () => {
+        const res = await api('/api/auth/entrar', { method: 'POST', body: { name: GUEST_NAME } });
+        assert(res.accessToken, 'entrar não devolveu accessToken');
+        assert(res.user?.role === 'PATIENT', `papel ${res.user?.role}`);
+        assert(res.user?.fullName === GUEST_NAME, `nome ${res.user?.fullName}`);
+        const dash = await api('/api/patient/dashboard', { token: res.accessToken });
+        assert(dash && Object.keys(dash).length, 'dashboard vazio');
+      });
+
+      await check('entrar sem nome é recusado', async () => {
+        const res = await http(`${BASE}/api/auth/entrar`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ username: user.username, password: user.password }),
+          body: JSON.stringify({ name: '   ' }),
         });
-        const body = await login.text();
-        assert(login.ok, `login respondeu ${login.status}: ${body}`);
-        const { accessToken } = JSON.parse(body);
-        assert(accessToken, 'login não devolveu accessToken');
-        tokens[user.username] = accessToken;
+        assert(res.status === 400 || res.status === 422, `respondeu ${res.status}`);
+      });
 
-        const dash = await http(`${BASE}${user.dashboard}`, {
-          headers: { authorization: `Bearer ${accessToken}` },
-        });
-        assert(dash.ok, `${user.dashboard} respondeu ${dash.status}`);
+      await check('entrar como médica + dashboard da médica', async () => {
+        const res = await api('/api/auth/entrar-medica', { method: 'POST' });
+        assert(res.user?.role === 'DOCTOR', `papel ${res.user?.role}`);
+        tokens[DOCTOR_USER] = res.accessToken;
+        await api('/api/doctor/dashboard', { token: res.accessToken });
+      });
+
+    } else {
+      await check('sem DEMO_MODE: rotas sem senha dão 404', async () => {
+        for (const p of ['/api/auth/entrar', '/api/auth/entrar-medica']) {
+          const res = await http(`${BASE}${p}`, {
+            method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"name":"x"}',
+          });
+          assert(res.status === 404, `${p} respondeu ${res.status}`);
+        }
+      });
+      await check('login com senha + dashboard da médica', async () => {
+        const res = await api('/api/auth/login', { method: 'POST', body: { username: DOCTOR_USER, password: 'Doctor@123' } });
+        tokens[DOCTOR_USER] = res.accessToken;
+        await api('/api/doctor/dashboard', { token: res.accessToken });
       });
     }
 

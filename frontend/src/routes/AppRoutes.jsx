@@ -4,7 +4,7 @@ import { lazy, Suspense } from 'react';
 
 // ─── Lazy imports ─────────────────────────────────────────────
 const LoginPage        = lazy(() => import('@/pages/auth/LoginPage'));
-const RegisterPage     = lazy(() => import('@/pages/auth/RegisterPage'));
+// RegisterPage saiu das rotas: na feira entra-se só com o nome
 
 // Teste rápido do stand (público, sem login)
 const QuickTest        = lazy(() => import('@/pages/public/QuickTest'));
@@ -47,7 +47,7 @@ export default function AppRoutes() {
       <Routes>
         {/* Público */}
         <Route path="/login"    element={<PublicRoute><LoginPage /></PublicRoute>} />
-        <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+        <Route path="/register" element={<Navigate to="/login" replace />} />
 
         {/* Teste rápido: FORA do PublicRoute (quem está logado também abre) */}
         <Route path="/teste"    element={<QuickTest />} />
