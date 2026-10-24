@@ -34,6 +34,7 @@ seed() {
 
 # SEED_ON_START=true: recria o banco do zero a cada start (demo sempre limpa)
 if [ "$SEED_ON_START" = "true" ]; then
+  rm -f "$db_file-wal" "$db_file-shm" "$db_file-journal"
   ./node_modules/.bin/prisma db push --skip-generate --force-reset --accept-data-loss
   seed
 elif [ ! -f "$db_file" ]; then

@@ -667,8 +667,9 @@ expansão futura.
 
 SQLite aceita um escritor por vez. `config/database.js` força
 `connection_limit=1` na `DATABASE_URL` (fila no processo, sem disputar o lock
-do arquivo) e liga `PRAGMA journal_mode=WAL` no boot: com o pool padrão, ~10
-triagens simultâneas estouravam o busy timeout de 5 s em 500.
+do arquivo): com o pool padrão, ~10 triagens simultâneas estouravam o busy
+timeout de 5 s em 500. Sem WAL: com uma conexão só não ganha nada e o
+arquivo `-wal` residual corrompia o `prisma db push --force-reset`.
 ### 12.1 Campos JSON-serializados
 
 Como SQLite via Prisma não suporta `Json` nativo, os campos abaixo são

@@ -4,7 +4,8 @@ const { PrismaClient } = require('@prisma/client');
 // conexões ao mesmo arquivo disputam o lock e, com ~10 triagens ao mesmo
 // tempo (demo logada na feira), estouram o busy timeout de 5 s em 500
 // "Operations timed out". connection_limit=1 serializa no processo (fila em
-// memória, sem lock) e o WAL deixa leituras passarem durante uma escrita.
+// memória, sem lock). Sem WAL de propósito: com uma conexão só ele não
+// ganha nada e o arquivo -wal residual corrompia o `db push --force-reset`.
 const withSingleConnection = (url) => {
   if (!url || !url.startsWith('file:') || /connection_limit=/.test(url)) return url;
   return `${url}${url.includes('?') ? '&' : '?'}connection_limit=1`;
@@ -20,23 +21,10 @@ const prisma = new PrismaClient({
       : ['error'],
 });
 
-// WAL persiste no arquivo; o PRAGMA é idempotente. Erro aqui não derruba o
-// servidor (ex.: banco em sistema de arquivos sem suporte): segue sem WAL.
-const enableWal = async () => {
-  if (!datasourceUrl?.startsWith('file:')) return;
-  try {
-    await prisma.$queryRawUnsafe('PRAGMA journal_mode=WAL');
-    await prisma.$queryRawUnsafe('PRAGMA busy_timeout=10000');
-  } catch (err) {
-    console.warn(`[database] não consegui ligar o WAL: ${err.message}`);
-  }
-};
-
 // Graceful shutdown
 process.on('beforeExit', async () => {
   await prisma.$disconnect();
 });
 
 module.exports = prisma;
-module.exports.enableWal = enableWal;
 module.exports.withSingleConnection = withSingleConnection;
