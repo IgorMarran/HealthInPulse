@@ -207,7 +207,7 @@ As chaves estrangeiras usam códigos, não UUID, para o seed com upsert ser simp
 **Fora de escopo:** treinar modelo de ML ou calibrar, red flags no banco, migrations do Prisma, portão de senha no teste.
 
 ## Ações que só o Igor pode fazer
-1. **Até dom 18:** em render.com, **New → Blueprint** → repo `IgorMarran/HealthInPulse` → **Apply**, deixando `DEMO_PASSWORD` e `OPENAI_API_KEY` vazios. Depois me mandar a URL, que vai no QR e no banner. Sem a URL até quarta, o banner sai com `https://healthinpulse.onrender.com` (o nome do serviço) e eu confiro.
+1. **Até dom 18:** em render.com, **New → Blueprint** → repo `IgorMarran/HealthInPulse` → **Apply**, deixando `DEMO_PASSWORD` e `OPENAI_API_KEY` vazios. Depois me mandar a URL, que vai no QR e no banner. Sem a URL até quarta, o banner sai com `https://healthinpulse-ib33.onrender.com` (o nome do serviço) e eu confiro.
 2. **Qui 22/sex 23:** imprimir o banner (a gráfica costuma levar 24–48 h; plano B: A3 com QR).
 3. **Qui 22/sex 23:** no notebook Windows do stand, clone limpo + `npm run setup` + `npm run stand` com o Wi-Fi desligado.
 

@@ -19,7 +19,7 @@ Marque na ordem. O que depende de uma pessoa está com o nome de quem faz no pla
     rodapé inteiro.
   - Aponte a câmera do celular para o QR **no PDF aberto na tela** e confirme que abre o `/teste`.
   - Plano B se a gráfica atrasar: imprimir o banner em folhas A3 (ou só o QR em A4) e colar num papel-cartão.
-- [ ] **Render no ar:** abrir `https://healthinpulse.onrender.com/teste` (ou a URL real) e fazer um teste completo.
+- [ ] **Render no ar:** abrir `https://healthinpulse-ib33.onrender.com/teste` (ou a URL real) e fazer um teste completo.
   - `npm run smoke -- --url=https://SEU-APP.onrender.com` passa.
   - No Render, `KB_EDIT=false` (a edição da base fica só no notebook; sem a variável também fica desligada, o padrão é fechado), `DEMO_PASSWORD` e `OPENAI_API_KEY` vazios.
   - Keep-warm ligado (UptimeRobot ou cron-job.org chamando `/health` a cada 10 min); no plano grátis o serviço dorme

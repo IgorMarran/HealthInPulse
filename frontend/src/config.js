@@ -4,7 +4,7 @@
 // o deploy no Render, que o celular do visitante alcança pela internet.
 // Sobrescreva com VITE_PUBLIC_TEST_URL no build (ex.: outro domínio).
 export const PUBLIC_TEST_URL =
-  import.meta.env.VITE_PUBLIC_TEST_URL || 'https://healthinpulse.onrender.com/teste';
+  import.meta.env.VITE_PUBLIC_TEST_URL || 'https://healthinpulse-ib33.onrender.com/teste';
 
 // Modo quiosque (/teste?kiosk=1): volta sozinho à capa depois disto parado
 export const KIOSK_IDLE_MS = 120 * 1000;

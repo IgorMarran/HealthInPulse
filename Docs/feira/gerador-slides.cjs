@@ -27,7 +27,7 @@ const path = require('path');
 const pptxgen = require('pptxgenjs');
 const QRCode = require('qrcode');
 
-const URL = process.argv[2] || 'https://healthinpulse.onrender.com/teste';
+const URL = process.argv[2] || 'https://healthinpulse-ib33.onrender.com/teste';
 const OUT = process.argv[3] || path.join(__dirname, 'slides.pptx');
 
 // Contas da demo (seed: backend/src/prisma/seed.js). Login por usuário, não por e-mail.
