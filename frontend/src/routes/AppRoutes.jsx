@@ -78,6 +78,9 @@ export default function AppRoutes() {
           <Route path="profile"              element={<DoctorProfile />} />
         </Route>
 
+        {/* URL do QR digitada errada (/teste/x) volta ao teste, não ao login da equipe */}
+        <Route path="teste/*" element={<Navigate to="/teste" replace />} />
+
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

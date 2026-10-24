@@ -118,7 +118,8 @@ export function BadgeToast({ station, onDone }) {
 }
 
 // Abertura da tela de resultado: trilha completa e os selos
-export function TrailComplete({ name, earned }) {
+export function TrailComplete({ name, earned, sex }) {
+  const title = sex === 'female' ? 'Guardiã da prevenção' : 'Guardião da prevenção';
   return (
     <div className="glass p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center gap-4 animate-slide-up">
       <span className="w-14 h-14 rounded-full bg-brand-600 text-white flex items-center justify-center shrink-0 animate-heartbeat">
@@ -127,7 +128,7 @@ export function TrailComplete({ name, earned }) {
       <div className="flex-1 min-w-0">
         <p className="text-xs uppercase tracking-wider text-brand-700 font-semibold">Trilha completa · pulso 100</p>
         <h2 className="font-display text-xl sm:text-2xl font-bold text-surface-900">
-          {name ? `${name}, você é Guardião da prevenção` : 'Você é Guardião da prevenção'}
+          {name ? `${name}, você é ${title}` : `Você é ${title}`}
         </h2>
         <ul className="flex flex-wrap gap-1.5 mt-2">
           {STATIONS.filter((s) => earned.includes(s.id)).map((s) => (

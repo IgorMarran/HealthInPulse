@@ -147,3 +147,59 @@ test('crônicas: PHQ-2 aceita likert 0 a 3 e enunciados não citam doença (R2)'
   const r = quickTest.run(kb, { profile: { age: 22, sex: 'female' }, answers: { ...CHRONIC_NO, phq9_anedonia: 3, phq9_humor_deprimido: 2 } });
   assert.equal(r.stage, 'RESULT');
 });
+
+// ─── Regressões da QA da feira (2026-10-23) ─────────────────────────
+const { mapGender } = require('../src/services/clinical/profile');
+
+test('LIKERT_CODES: só o PHQ-2 aceita 0 a 3; o resto é sim/não', () => {
+  assert.deepEqual([...quickTest.LIKERT_CODES].sort(), ['phq9_anedonia', 'phq9_humor_deprimido']);
+  for (const c of quickTest.CHRONIC_QUICK) {
+    const isLikert = quickTest.LIKERT_CODES.includes(c.code);
+    assert.equal(quickTest.CHRONIC_QUICK.length > 0 && isLikert, c.code.startsWith('phq9_'), c.code);
+  }
+});
+
+test('mapGender: valor desconhecido (array vindo da API) não vira sexo', () => {
+  assert.equal(mapGender(['female', 'male']), null);
+  assert.equal(mapGender('xyz'), null);
+  assert.equal(mapGender('F'), 'female');
+  assert.equal(mapGender('masculino'), 'male');
+});
+
+test('refresh tokens emitidos no mesmo segundo são diferentes (jti)', () => {
+  process.env.JWT_ACCESS_SECRET  ??= 'test-access';
+  process.env.JWT_REFRESH_SECRET ??= 'test-refresh';
+  const { generateRefreshToken, verifyRefreshToken } = require('../src/config/jwt');
+  const a = generateRefreshToken({ id: 'u1', role: 'DOCTOR' });
+  const b = generateRefreshToken({ id: 'u1', role: 'DOCTOR' });
+  assert.notEqual(a, b);
+  assert.ok(verifyRefreshToken(a).jti);
+});
+
+test('withSingleConnection: SQLite ganha connection_limit=1 uma vez só', () => {
+  const { withSingleConnection } = require('../src/config/database');
+  assert.equal(withSingleConnection('file:./dev.db'), 'file:./dev.db?connection_limit=1');
+  assert.equal(withSingleConnection('file:./dev.db?foo=1'), 'file:./dev.db?foo=1&connection_limit=1');
+  assert.equal(withSingleConnection('file:./dev.db?connection_limit=3'), 'file:./dev.db?connection_limit=3');
+  assert.equal(withSingleConnection('postgres://x'), 'postgres://x');
+});
+
+test('errorMiddleware: JSON inválido e multer viram 4xx sem ecoar o corpo', () => {
+  const mw = require('../src/middlewares/errorMiddleware');
+  const run = (err) => {
+    let out = {};
+    const res = { status: (s) => { out.status = s; return res; }, json: (b) => { out.body = b; } };
+    mw(err, { path: '/x', method: 'POST' }, res, () => {});
+    return out;
+  };
+  const parse = Object.assign(new Error('Unexpected token \'"\', ""oi"" is not valid JSON'), { type: 'entity.parse.failed' });
+  const r400 = run(parse);
+  assert.equal(r400.status, 400);
+  assert.equal(r400.body.error, 'JSON inválido'); // em development o stack vai junto; em produção só isto
+  const big = Object.assign(new Error('File too large'), { name: 'MulterError', code: 'LIMIT_FILE_SIZE' });
+  assert.equal(run(big).status, 413);
+  assert.equal(run(Object.assign(new Error('Tipo não permitido'), { status: 415 })).status, 415);
+  const r500 = run(new Error('segredo interno'));
+  assert.equal(r500.status, 500);
+  assert.equal(r500.body.error, 'Erro interno do servidor');
+});

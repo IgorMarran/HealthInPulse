@@ -31,11 +31,15 @@ import Disclaimer from '@/components/common/Disclaimer';
 import QrCode from '@/components/common/QrCode';
 import { PERSONAS } from './personas';
 import {
-  TrailHud, BadgeToast, TrailComplete, StationIntro, PROFILE_STATIONS, PROFILE_STEPS, pulseFor,
+  TrailHud, BadgeToast, TrailComplete, StationIntro, STATIONS, PROFILE_STATIONS, PROFILE_STEPS, pulseFor,
 } from '@/components/game/Trail';
 import { ScoreRing, WinList, MissionList, ExamMissions } from '@/components/game/MissionBoard';
 
 const PROFILE_KEYS = Object.keys(PROFILE_STATIONS);
+// Mesmo texto do backend (quickTestService): a API continua sendo a regra
+const MIN_AGE = 18;
+const BLOCKED_REASON = 'O teste rápido é para maiores de 18 anos. Converse com seus pais ou responsáveis '
+  + 'e com um profissional de saúde se tiver dúvidas.';
 
 // Campos numéricos curtos dividem a linha; os de rótulo longo ocupam tudo
 const HALF_WIDTH = ['age', 'height', 'weight', 'packYears'];
@@ -137,7 +141,9 @@ export default function QuickTest() {
 
   const sendProfile = () => {
     award(PROFILE_KEYS[PROFILE_KEYS.length - 1]);
-    if (persona) setEarned(PROFILE_KEYS);
+    // Persona pula as perguntas e vai direto ao resultado: ganha a trilha
+    // inteira, senão o "Trilha completa" saía com só 3 selos.
+    if (persona) setEarned(STATIONS.map((s) => s.id));
     const prof = visibleProfile(schema, profile);
     const ans = persona ? { ...persona.answers } : {};
     setAnswers(ans);
@@ -159,6 +165,13 @@ export default function QuickTest() {
   };
 
   const nextProfileStep = () => {
+    // Menor de idade: barra aqui, não depois de três telas (a API também barra)
+    if (Number(profile.age) < MIN_AGE) {
+      abortRef.current?.abort();
+      setRes({ stage: 'BLOCKED', reason: BLOCKED_REASON });
+      setStep('BLOCKED');
+      return;
+    }
     award(PROFILE_KEYS[profileStep]);
     setProfileStep((s) => s + 1);
   };
@@ -176,6 +189,28 @@ export default function QuickTest() {
 
   // ─── Topo da página a cada tela nova ───────────────────────
   useEffect(() => { window.scrollTo({ top: 0 }); }, [step, res]);
+
+  // ─── Botão "voltar" do navegador ───────────────────────────
+  // No celular o gesto de voltar é comum e tirava o visitante do /teste
+  // (perdia tudo). Ao sair da capa entra UMA entrada no histórico; o
+  // popstate recoloca a entrada e faz o "Voltar" da trilha. Na capa, o
+  // voltar segue normal (sai da página).
+  const backRef = useRef(null);
+  backRef.current = () => {
+    if (step === 'QUESTION') return back();
+    if (step === 'PROFILE' && profileStep > 0) { setError(null); setProfileStep((s) => s - 1); return undefined; }
+    return reset();
+  };
+  useEffect(() => {
+    if (step === 'COVER') return undefined;
+    if (!window.history.state?.trilha) window.history.pushState({ trilha: true }, '');
+    const onPop = () => {
+      if (!window.history.state?.trilha) window.history.pushState({ trilha: true }, '');
+      backRef.current?.();
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [step]);
 
   // ─── Modo quiosque: 120 s parado → capa ────────────────────
   useEffect(() => {
@@ -267,7 +302,7 @@ export default function QuickTest() {
         )}
 
         {step === 'RESULT' && res && (
-          <Result res={res} persona={persona} name={name} earned={earned} age={profile.age} onRestart={reset} />
+          <Result res={res} persona={persona} name={name} earned={earned} age={profile.age} sex={profile.sex} onRestart={reset} />
         )}
       </main>
 
@@ -407,13 +442,13 @@ function ProfileStep({
 }
 
 // ─── Resultado ───────────────────────────────────────────────
-function Result({ res, persona, name, earned, age, onRestart }) {
+function Result({ res, persona, name, earned, age, sex, onRestart }) {
   const [bonus, setBonus] = useState(0); // missões aceitas na tela
   const urgent = res.redFlag || res.nextStep?.code === 'AGORA';
   return (
     <div className="space-y-6 animate-fade-in">
       {persona && <PersonaNote persona={persona} />}
-      {!urgent && <TrailComplete name={name.trim()} earned={earned} />}
+      {!urgent && <TrailComplete name={name.trim()} earned={earned} sex={sex} />}
 
       <NextStepCard step={res.nextStep} />
 

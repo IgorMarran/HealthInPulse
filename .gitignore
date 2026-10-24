@@ -26,6 +26,8 @@ backend/src/uploads/reports/*
 backend/src/prisma/migrations/
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 
 # ─── Claude / config local ───────────────────────────────────
 .claude/

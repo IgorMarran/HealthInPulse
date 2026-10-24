@@ -55,6 +55,11 @@ Implementado em `services/authService.js::register`.
 - **Rotação de refresh**: a cada `POST /api/auth/refresh`, o token apresentado
   é **deletado** e um novo par é emitido. Reuso de refresh token é
   automaticamente bloqueado.
+  O refresh leva um `jti` aleatório: dois logins do mesmo usuário no mesmo
+  segundo (duplo clique em "entrar como médica") geravam o mesmo JWT e
+  estouravam o `@unique` de `RefreshToken`.
+- A entrada só com nome (`POST /api/auth/entrar`) roda numa transação única:
+  sob carga, uma falha no meio deixava um visitante pela metade no banco.
 - Mudança de senha (`POST /api/auth/change-password`) **invalida TODOS** os
   refresh tokens do usuário, forçando login novamente em todos os dispositivos.
 
@@ -94,7 +99,7 @@ no máximo **30 tentativas em 15 minutos** por IP (ajustável com
 a sala toda sai por um IP só). Em desenvolvimento, fica **desativado** para
 facilitar testes manuais (definido em `src/app.js`).
 
-`/api/public` tem limite próprio, **sempre ativo**: 300 requisições por minuto
+`/api/public` tem limite próprio, **sempre ativo**: 3000 requisições por minuto
 por IP (`PUBLIC_RATE_LIMIT`) e corpo de até 16 KB.
 
 ### 1.7 Portão da demo (`DEMO_PASSWORD`)
@@ -659,6 +664,11 @@ expansão futura.
 
 ## 12. Persistência e particularidades do SQLite
 
+
+SQLite aceita um escritor por vez. `config/database.js` força
+`connection_limit=1` na `DATABASE_URL` (fila no processo, sem disputar o lock
+do arquivo) e liga `PRAGMA journal_mode=WAL` no boot: com o pool padrão, ~10
+triagens simultâneas estouravam o busy timeout de 5 s em 500.
 ### 12.1 Campos JSON-serializados
 
 Como SQLite via Prisma não suporta `Json` nativo, os campos abaixo são
@@ -753,12 +763,16 @@ Prisma 5 rejeita strings em `skip`/`take`.
   visitante já respondeu; a resposta é a próxima etapa. Não há tabela, sessão
   nem log do corpo (morgan registra só a URL; o `errorMiddleware` só loga erro 500).
 - **Etapas:** `PROFILE` (falta idade ou sexo; só esses dois são obrigatórios),
-  `BLOCKED` (menor de **18 anos**), `QUESTION` (painel `RAPIDO`, até **8**
-  perguntas, com follow-ups) e `RESULT`.
-- **Validação:** campos fora da lista dão 422; só perguntas do painel `RAPIDO`;
-  no máximo 30 respostas; valores `true/false/0/1/"sim"/"não"` ou `null`.
-  Resposta de pergunta que não vale para o perfil (homem com "nódulo na mama")
-  é descartada. Limite de 300 req/min por IP e corpo de 16 KB.
+  `BLOCKED` (menor de **18 anos**; o frontend já barra na primeira estação),
+  `QUESTION` (12 perguntas fixas das crônicas e depois o painel `RAPIDO`, até
+  **6** perguntas, com follow-ups) e `RESULT`.
+- **Validação:** só `application/json` (415 senão); campos fora da lista dão
+  422; só perguntas das crônicas e do painel `RAPIDO`; no máximo 40 respostas;
+  valores `true/false/0/1/"sim"/"não"` ou `null`, e `0..3` só nas duas
+  perguntas de frequência (PHQ-2). Resposta de pergunta que não vale para o
+  perfil (homem com "nódulo na mama") é descartada. Limite de 3000 req/min
+  por IP (`PUBLIC_RATE_LIMIT`; um teste gasta ~20 chamadas e atrás do proxy
+  do Render o stand inteiro chega com um IP) e corpo de 16 KB.
 - **Red flag** encerra na hora.
 - **Resultado:** categoria por câncer, risco relativo, frequência natural,
   rastreamento (agora e futuro) e "o que você pode mudar". Sem exames nem

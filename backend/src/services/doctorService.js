@@ -33,8 +33,9 @@ const updateAvatar = async (userId, avatarUrl) =>
 // ─── Pacientes vinculados ────────────────────────────────────
 
 const getPatients = async (doctorId, { page = 1, limit = 20, search } = {}) => {
-  const p = Number(page)  || 1;
-  const l = Number(limit) || 20;
+  // ?page=-5 ia ao Prisma como skip negativo (500); limit=0 devolvia tudo
+  const p = Math.max(1, Math.trunc(Number(page)) || 1);
+  const l = Math.min(200, Math.max(1, Math.trunc(Number(limit)) || 20));
   const where = {
     doctorLinks: { some: { doctorId } },
     ...(search
@@ -59,14 +60,22 @@ const getPatients = async (doctorId, { page = 1, limit = 20, search } = {}) => {
         id: true, fullName: true, dateOfBirth: true,
         gender: true, avatarUrl: true, bloodType: true,
         chronicConds: true,
+        user: { select: { username: true } },
       },
       orderBy: { fullName: 'asc' },
     }),
   ]);
 
   return {
-    total, page, limit,
-    patients: patients.map((p) => ({ ...p, chronicConds: parseJson(p.chronicConds, []) })),
+    total, page: p, limit: l,
+    // isVisitor: entrou só com o nome (feira). Um visitante pode digitar o nome
+    // de uma persona e a médica veria dois "Roberto" sem saber qual é qual.
+    patients: patients.map(({ user, ...p }) => ({
+      ...p,
+      username:     user?.username ?? null,
+      isVisitor:    Boolean(user?.username?.startsWith('visitante.')),
+      chronicConds: parseJson(p.chronicConds, []),
+    })),
   };
 };
 
@@ -136,9 +145,11 @@ const getDashboard = async (doctorId) => {
     linkedPatients,
   ] = await Promise.all([
     prisma.doctorPatient.count({ where: { doctorId } }),
+    // O relatório da triagem nasce sem doctorId (é do paciente); o KPI conta
+    // os dos pacientes vinculados, senão fica em 0 com dezenas de alertas.
     prisma.aiReport.count({
       where: {
-        doctorId,
+        OR: [{ doctorId }, { patient: { doctorLinks: { some: { doctorId } } } }],
         riskLevel: { in: ['HIGH', 'CRITICAL'] },
         generatedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
       },
@@ -161,7 +172,7 @@ const getDashboard = async (doctorId) => {
       include: { patient: { select: { fullName: true, avatarUrl: true } } },
     }),
     prisma.aiReport.findMany({
-      where:   { doctorId },
+      where:   { OR: [{ doctorId }, { patient: { doctorLinks: { some: { doctorId } } } }] },
       take:    5,
       orderBy: { generatedAt: 'desc' },
       include: { patient: { select: { id: true, fullName: true } } },

@@ -27,7 +27,7 @@ const storage = (dest) =>
 
 const fileFilter = (allowed) => (_req, file, cb) => {
   if (allowed.includes(file.mimetype)) cb(null, true);
-  else cb(new Error(`Tipo de arquivo não permitido: ${file.mimetype}`), false);
+  else cb(Object.assign(new Error(`Tipo de arquivo não permitido: ${file.mimetype}`), { status: 415 }), false);
 };
 
 const examUpload = multer({

@@ -168,7 +168,8 @@ async function checkQuickTest() {
     for (let i = 0; i < 30; i++) {
       res = await api('/api/public/quick-test', { method: 'POST', body: { profile, answers } });
       if (res.stage !== 'QUESTION') break;
-      answers[res.question.id] = false;
+      // Likert (PHQ-2) é 0 a 3; o resto é sim/não
+      answers[res.question.id] = res.question.type === 'likert' ? 0 : false;
     }
     assert(res.stage === 'RESULT', `terminou em ${res.stage} depois de ${Object.keys(answers).length} respostas`);
     assert(Object.keys(answers).length > 0, 'nenhuma pergunta feita');
@@ -188,7 +189,8 @@ async function checkDoctorRisk() {
   const { patients } = await api('/api/doctor/patients?limit=100', { token });
   for (const p of PERSONAS) {
     await check(`médica: risco de ${p.name.split(' ')[0]}`, async () => {
-      const patient = patients.find((x) => x.fullName === p.name);
+      // Pelo nome E fora dos visitantes: alguém pode ter entrado como "Roberto Alves Pereira"
+      const patient = patients.find((x) => x.fullName === p.name && !x.isVisitor);
       assert(patient, `${p.name} não está entre os pacientes da médica (rode \`npm run db:reset\`)`);
       const risk = await api(`/api/doctor/patients/${patient.id}/risk`, { token });
       const levels = Object.fromEntries(risk.oncology.conditions.map((c) => [c.code, c.level]));
