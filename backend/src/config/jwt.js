@@ -1,4 +1,5 @@
-const jwt = require('jsonwebtoken');
+const jwt    = require('jsonwebtoken');
+const crypto = require('crypto');
 
 const ACCESS_SECRET  = process.env.JWT_ACCESS_SECRET;
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
@@ -18,8 +19,11 @@ const generateAccessToken = (payload) =>
 /**
  * Gera um refresh token de longa duração
  */
+// `jti` aleatório: o JWT só muda a cada segundo (iat). Dois logins do mesmo
+// usuário no mesmo segundo (duplo clique, duas pessoas no "entrar como
+// médica") gerariam o mesmo token e estourariam o @unique de RefreshToken.
 const generateRefreshToken = (payload) =>
-  jwt.sign(payload, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRY });
+  jwt.sign({ ...payload, jti: crypto.randomUUID() }, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRY });
 
 /**
  * Verifica e decodifica um access token

@@ -41,7 +41,9 @@ elif [ ! -f "$db_file" ]; then
   ./node_modules/.bin/prisma db push --skip-generate
   seed
 else
-  ./node_modules/.bin/prisma db push --skip-generate
+  # Dados são de demo: mudança destrutiva de schema não pode deixar o
+  # container em crash loop (o db push sem a flag falha em modo não interativo)
+  ./node_modules/.bin/prisma db push --skip-generate --accept-data-loss
 fi
 
 exec "$@"

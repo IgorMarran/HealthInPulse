@@ -18,12 +18,23 @@ const { FAMILY_CANCER_VALUES } = require('../services/clinical/profile');
 const guard = [
   rateLimit({
     windowMs: 60 * 1000,
-    // No stand todo mundo sai pelo IP do notebook: ~15 chamadas por teste
-    limit: Number(process.env.PUBLIC_RATE_LIMIT) || 300,
+    // Um teste completo gasta ~20 chamadas. No Render (TRUST_PROXY=1) todo
+    // celular do Wi-Fi do stand chega com o MESMO IP público: o limite é da
+    // feira inteira, não por pessoa. 40 pessoas rápidas = ~800/min; 3000 dá
+    // folga e ainda barra um script (o corpo é de 16 KB e a rota é pura).
+    limit: Number(process.env.PUBLIC_RATE_LIMIT) || 3000,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: { error: 'Muitas requisições. Espere um minuto e tente de novo.' },
   }),
+  // Só JSON: senão o express.urlencoded geral (100 KB) processaria o corpo
+  // desta rota e o limite de 16 KB seria contornável.
+  (req, res, next) => {
+    if (req.method === 'POST' && !req.is('application/json')) {
+      return res.status(415).json({ error: 'Envie o corpo como application/json' });
+    }
+    next();
+  },
   express.json({ limit: '16kb' }),
 ];
 
@@ -33,7 +44,9 @@ const guard = [
 // lista explícita dentro de `profile`).
 const opt = (field) => body(field).optional({ values: 'falsy' });
 const ANSWER_CODE = /^[a-z0-9_]{1,64}$/;
-const ANSWER_VALUES = [true, false, 0, 1, 2, 3, 'sim', 'não', 'nao']; // 2 e 3: likert do PHQ-2
+const BOOL_VALUES   = [true, false, 0, 1, 'sim', 'não', 'nao'];
+const LIKERT_VALUES = [0, 1, 2, 3]; // PHQ-2
+const isLikert = (code) => quickTest.LIKERT_CODES.includes(code);
 
 const quickTestRules = checkExact([
   body('profile').optional({ values: 'null' }).isObject().withMessage('profile deve ser um objeto')
@@ -46,7 +59,7 @@ const quickTestRules = checkExact([
       return true;
     }),
   opt('profile.age').isInt({ min: 0, max: 120 }).withMessage('idade entre 0 e 120'),
-  opt('profile.sex').isIn(['male', 'female']).withMessage('sexo: male ou female'),
+  opt('profile.sex').not().isArray().withMessage('sexo: male ou female').isIn(['male', 'female']).withMessage('sexo: male ou female'),
   opt('profile.height').isFloat({ min: 50, max: 250 }).withMessage('altura em cm (50 a 250)'),
   opt('profile.weight').isFloat({ min: 20, max: 300 }).withMessage('peso em kg (20 a 300)'),
   opt('profile.smoker').isBoolean().withMessage('true ou false'),
@@ -66,8 +79,13 @@ const quickTestRules = checkExact([
       return true;
     }),
   // null = "não sei" (conta como respondida, não vira evidência)
-  body('answers.*').custom((v) => v === null || ANSWER_VALUES.includes(v))
-    .withMessage('Resposta: true, false, 0 a 3, "sim", "não" ou null'),
+  // Likert (PHQ-2) aceita 0 a 3; o resto é sim/não. Um 3 numa pergunta
+  // booleana era aceito e lido como "não" no plano de prevenção.
+  body('answers.*').custom((v, { path }) => {
+    if (v === null) return true;
+    const code = path.replace(/^answers\./, '').replace(/^\[|\]$/g, '').replace(/^["']|["']$/g, '');
+    return (isLikert(code) ? LIKERT_VALUES : BOOL_VALUES).includes(v);
+  }).withMessage('Resposta: true, false, 0/1, "sim", "não" ou null (0 a 3 nas perguntas de frequência)'),
 ], { message: 'Campo não permitido' });
 
 const runQuickTest = async (req, res, next) => {

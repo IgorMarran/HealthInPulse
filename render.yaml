@@ -42,6 +42,10 @@ services:
       # Sala de aula sai por um IP só; 30 logins/15 min trava a apresentação
       - key: AUTH_RATE_LIMIT
         value: '300'
+      # /teste: um teste gasta ~20 chamadas e TODO o Wi-Fi do stand chega com
+      # o mesmo IP público (TRUST_PROXY). 300/min travaria a feira em 429.
+      - key: PUBLIC_RATE_LIMIT
+        value: '3000'
       # Base da IA só leitura na demo pública (já é o padrão sem a variável;
       # fica explícito): editar fica no notebook do stand. Não troque para true:
       # qualquer visitante logaria como médica (a senha é pública) e alteraria a IA.

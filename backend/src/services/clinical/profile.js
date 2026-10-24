@@ -13,7 +13,7 @@ const mapGender = (g) => {
   const s = String(g).toLowerCase();
   if (['m', 'male', 'masculino', 'h'].includes(s)) return 'male';
   if (['f', 'female', 'feminino'].includes(s))     return 'female';
-  return s;
+  return null; // desconhecido (ex.: array vindo da API) não vira sexo
 };
 
 const computeBmi = (heightCm, weightKg) => {

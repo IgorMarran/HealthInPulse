@@ -38,6 +38,21 @@ const DOCTOR = { username: 'ana',     password: 'Doctor@123' };
 const ROBERTO = { username: 'roberto', password: 'Roberto@123' };
 
 let server = null;     // processo do backend
+
+// O banco já tem a médica da demo? (só leitura, pelo Prisma Client do backend)
+async function hasDemoDoctor() {
+  const { createRequire } = await import('node:module');
+  const req = createRequire(join(BACKEND, 'package.json'));
+  const { PrismaClient } = req('@prisma/client');
+  const prisma = new PrismaClient();
+  try {
+    return (await prisma.user.count({ where: { username: DOCTOR.username, role: 'DOCTOR' } })) > 0;
+  } catch {
+    return false;
+  } finally {
+    await prisma.$disconnect();
+  }
+}
 let stopping = false;
 
 // ─── ambiente do stand ───────────────────────────────────────
@@ -240,10 +255,13 @@ async function main() {
   const dbFile = dbFilePath(env);
   const isNewDb = !existsSync(dbFile);
   await runPrisma(KEEP_DB
-    ? ['db', 'push', '--skip-generate']
+    ? ['db', 'push', '--skip-generate', '--accept-data-loss']
     : ['db', 'push', '--force-reset', '--skip-generate', '--accept-data-loss']);
   ok(`banco em ${dbFile}`);
-  if (!KEEP_DB || isNewDb) {
+  // --keep-db com banco criado mas sem seed (setup interrompido) subiria sem a
+  // médica: "entrar como médica" daria 404 e nenhum alerta chegaria.
+  const needsSeed = !KEEP_DB || isNewDb || !(await hasDemoDoctor());
+  if (needsSeed) {
     try {
       await run('npm', ['run', 'db:seed'], { cwd: BACKEND });
     } catch (err) {

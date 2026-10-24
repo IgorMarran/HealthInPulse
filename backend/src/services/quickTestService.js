@@ -57,6 +57,8 @@ const CHRONIC_QUICK = [
     text: 'Pai, mãe, irmãos ou filhos tratam açúcar alto no sangue?' },
 ];
 const CHRONIC_CODES = CHRONIC_QUICK.map(c => c.code);
+// Perguntas de frequência (0 a 3): só o PHQ-2. As demais são sim/não.
+const LIKERT_CODES  = CHRONIC_QUICK.map(c => c.code).filter(c => getQuestionForSymptom(c)?.type === 'likert');
 const ONCO_STATION  = 'SINAIS';
 
 const chronicQuestion = ({ code, station, text }) => {
@@ -178,6 +180,7 @@ module.exports = {
   MAX_QUESTIONS,
   MAX_ANSWERS,
   CHRONIC_QUICK,
+  LIKERT_CODES,
   MIN_AGE,
   PROFILE_FIELDS,
   DISCLAIMER,

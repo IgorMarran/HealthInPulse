@@ -1,19 +1,24 @@
 import { useState } from 'react';
 import { useFetch, useDebounce } from '@/hooks';
 import { doctorService } from '@/services';
-import { Users, Search, ChevronRight } from 'lucide-react';
+import { Users, Search, ChevronRight, ChevronLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function DoctorPatients() {
   const [search, setSearch] = useState('');
+  const [page, setPage]     = useState(1);
   const debouncedSearch     = useDebounce(search, 400);
+  const LIMIT = 30;
 
   const { data, loading } = useFetch(
-    () => doctorService.getPatients({ search: debouncedSearch || undefined, limit: 30 }),
-    [debouncedSearch],
+    () => doctorService.getPatients({ search: debouncedSearch || undefined, page, limit: LIMIT }),
+    [debouncedSearch, page],
   );
 
-  const patients = data?.patients || [];
+  const patients   = data?.patients || [];
+  const total      = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+  const changeSearch = (v) => { setSearch(v); setPage(1); };
 
   const calcAge = (dob) => {
     const diff = Date.now() - new Date(dob).getTime();
@@ -38,7 +43,7 @@ export default function DoctorPatients() {
           className="input pl-9"
           placeholder="Buscar por nome ou usuário…"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => changeSearch(e.target.value)}
         />
       </div>
 
@@ -93,6 +98,21 @@ export default function DoctorPatients() {
           </Link>
         ))}
       </div>
+
+      {/* Paginação: com os visitantes da feira a lista passa de 30 */}
+      {!loading && totalPages > 1 && (
+        <div className="flex items-center justify-between text-sm text-surface-500">
+          <button type="button" className="btn-ghost" disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            <ChevronLeft size={15} /> Anteriores
+          </button>
+          <span>Página {page} de {totalPages}</span>
+          <button type="button" className="btn-ghost" disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+            Próximos <ChevronRight size={15} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

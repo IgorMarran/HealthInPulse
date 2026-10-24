@@ -18,13 +18,13 @@ const buildTokenPayload = (user) => ({
   role:     user.role,
 });
 
-const issueTokenPair = async (user) => {
+const issueTokenPair = async (user, db = prisma) => {
   const payload      = buildTokenPayload(user);
   const accessToken  = generateAccessToken(payload);
   const refreshToken = generateRefreshToken(payload);
 
   // Persiste o refresh token
-  await prisma.refreshToken.create({
+  await db.refreshToken.create({
     data: {
       token:     refreshToken,
       userId:    user.id,
@@ -91,40 +91,44 @@ const guestEnter = async ({ fullName }) => {
   const profile = tp ? (({ id, userId, fullName: _n, cpf, avatarUrl, healthCoins, createdAt, updatedAt,
     vitalSigns, exams, goals, ...rest }) => rest)(tp) : {};
 
-  const user = await prisma.user.create({
-    data: {
-      username: `visitante.${crypto.randomBytes(6).toString('hex')}`,
-      passwordHash,
-      role: 'PATIENT',
-      patient: { create: {
-        ...profile,
-        fullName,
-        doctorLinks: { create: doctors.map((d) => ({ doctorId: d.id })) },
-      } },
-    },
-    include: { patient: true },
-  });
-  const patientId = user.patient.id;
+  // Tudo numa transação: sob carga, uma escrita que falha no meio deixava
+  // um visitante fantasma (usuário sem refresh token, sem dados) no banco.
+  return prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        username: `visitante.${crypto.randomBytes(6).toString('hex')}`,
+        passwordHash,
+        role: 'PATIENT',
+        patient: { create: {
+          ...profile,
+          fullName,
+          doctorLinks: { create: doctors.map((d) => ({ doctorId: d.id })) },
+        } },
+      },
+      include: { patient: true },
+    });
+    const patientId = user.patient.id;
 
-  if (tp) {
-    if (tp.vitalSigns.length)
-      await prisma.vitalSign.createMany({ data: tp.vitalSigns.map((v) => ({ ...strip(v), patientId })) });
-    if (tp.goals.length)
-      await prisma.healthGoal.createMany({ data: tp.goals.map((g) => ({ ...strip(g), patientId })) });
-    for (const e of tp.exams) {
-      const { examResult: result, ...exam } = e;
-      await prisma.exam.create({ data: {
-        ...strip(exam), patientId,
-        ...(result ? { examResult: { create: (({ id, examId, ...r }) => r)(result) } } : {}),
-      } });
+    if (tp) {
+      if (tp.vitalSigns.length)
+        await tx.vitalSign.createMany({ data: tp.vitalSigns.map((v) => ({ ...strip(v), patientId })) });
+      if (tp.goals.length)
+        await tx.healthGoal.createMany({ data: tp.goals.map((g) => ({ ...strip(g), patientId })) });
+      for (const e of tp.exams) {
+        const { examResult: result, ...exam } = e;
+        await tx.exam.create({ data: {
+          ...strip(exam), patientId,
+          ...(result ? { examResult: { create: (({ id, examId, ...r }) => r)(result) } } : {}),
+        } });
+      }
     }
-  }
 
-  await prisma.auditLog.create({
-    data: { userId: user.id, action: 'LOGIN', entity: 'User', entityId: user.id },
-  });
-  const tokens = await issueTokenPair(user);
-  return { user: sanitize(user), ...tokens };
+    await tx.auditLog.create({
+      data: { userId: user.id, action: 'LOGIN', entity: 'User', entityId: user.id },
+    });
+    const tokens = await issueTokenPair(user, tx);
+    return { user: sanitize(user), ...tokens };
+  }, { timeout: 15000 });
 };
 
 // Médica: entra direto na conta médica de demonstração do seed (sem senha)
