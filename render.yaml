@@ -20,10 +20,9 @@ services:
     runtime: docker
     plan: free
     healthCheckPath: /health
-    # Desligado para a feira: um push na main reiniciava o serviço e apagava
-    # os visitantes no meio da demo (disco efêmero). Deploy pelo painel:
-    # Manual Deploy → Deploy latest commit. Volte para true depois da feira.
-    autoDeploy: false
+    # Cada push na main reinicia o serviço e apaga os visitantes (disco
+    # efêmero): durante a feira, nenhum push na main.
+    autoDeploy: true
     envVars:
       # O Render fica atrás de proxy: o IP real do cliente vem no X-Forwarded-For
       - key: TRUST_PROXY
