@@ -9,7 +9,7 @@
 
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -235,6 +235,9 @@ async function main() {
   step('Criando/atualizando o banco SQLite');
   const dbFile = dbFilePath(env);
   const isNewDb = !existsSync(dbFile);
+  // Journal/WAL de um servidor morto no meio, aplicado num banco recriado,
+  // vira "database disk image is malformed"
+  if (resetDb) for (const s of ['-wal', '-shm', '-journal']) rmSync(`${dbFile}${s}`, { force: true });
   await runPrisma(resetDb
     ? ['db', 'push', '--force-reset', '--skip-generate', '--accept-data-loss']
     : ['db', 'push', '--skip-generate']);

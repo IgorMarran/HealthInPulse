@@ -37,7 +37,6 @@ const start = async () => {
   try {
     // Testa a conexão com o banco antes de subir
     await prisma.$connect();
-    await prisma.enableWal();
     logger.info('✅ Banco de dados conectado');
 
     // Base de conhecimento do motor clínico: cria/completa a partir do JS

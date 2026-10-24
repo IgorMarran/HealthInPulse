@@ -14,7 +14,7 @@
 // Variáveis opcionais: STAND_PORT, STAND_PUBLIC_URL (link do Render no banner).
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
@@ -36,6 +36,10 @@ const PUBLIC_URL = (process.env.STAND_PUBLIC_URL || 'https://healthinpulse.onren
 
 const DOCTOR = { username: 'ana',     password: 'Doctor@123' };
 const ROBERTO = { username: 'roberto', password: 'Roberto@123' };
+
+const removeSqliteSidecars = (dbFile) => {
+  for (const suffix of ['-wal', '-shm', '-journal']) rmSync(`${dbFile}${suffix}`, { force: true });
+};
 
 let server = null;     // processo do backend
 
@@ -254,6 +258,9 @@ async function main() {
   step(KEEP_DB ? 'Atualizando o banco (mantendo os dados)' : 'Zerando e populando o banco da demo');
   const dbFile = dbFilePath(env);
   const isNewDb = !existsSync(dbFile);
+  // Journal/WAL de um servidor morto no meio: aplicado num banco recriado
+  // vira "database disk image is malformed"
+  if (!KEEP_DB) removeSqliteSidecars(dbFile);
   await runPrisma(KEEP_DB
     ? ['db', 'push', '--skip-generate', '--accept-data-loss']
     : ['db', 'push', '--force-reset', '--skip-generate', '--accept-data-loss']);
